@@ -96,7 +96,7 @@ def convert2DF(xml_data):
     xml_data = re.sub(r'\\x..', '', xml_data)
 
     #print(xml_data)
-    soup = BeautifulSoup(xml_data, 'lxml')
+    soup = BeautifulSoup(xml_data, 'html.parser')
 
     # find the table in the soup
     table = soup.find('table')

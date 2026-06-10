@@ -172,7 +172,7 @@ Query to run\nSQLResult: Result of the SQLQuery\nAnswer: Final answer here\n\nOn
 following tables:\n{table_info}\n\nQuestion: {input}'
 """
 
-def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_list, additional_question=None, llm=None, llm_qa=None, show_errors=True):
+def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_list, additional_question=None, llm=None, llm_qa=None, show_errors=True, ollama_base_url="http://localhost:11434"):
 
     df_list = []
     for c_table in current_paper_tables:
@@ -266,7 +266,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                 except func_timeout.exceptions.FunctionTimedOut:
                     result0 = None
                     del db_chain; llm.clear();
-                    llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                    llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                     db_chain = SQLDatabaseChain.from_llm(llm[0], db, prompt=prompt, use_query_checker=False, verbose=False, return_intermediate_steps=True,  return_direct=True)
 
 
@@ -282,7 +282,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                 except func_timeout.exceptions.FunctionTimedOut:
                     result1 = None
                     del db_chain; llm.clear();
-                    llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                    llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                     db_chain = SQLDatabaseChain.from_llm(llm[0], db, prompt=prompt, use_query_checker=False, verbose=False, return_intermediate_steps=True,  return_direct=True)
 
                 q2 = f"search for the string: '{query_variant}' through every column in table {current_table} using OR? (find all, no limit, column names should be like 0,1,2 as u can see in the schema)"
@@ -296,7 +296,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                 except func_timeout.exceptions.FunctionTimedOut:
                     result2 = None
                     del db_chain; llm.clear();
-                    llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                    llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                     db_chain = SQLDatabaseChain.from_llm(llm[0], db, prompt=prompt, use_query_checker=False, verbose=False, return_intermediate_steps=True,  return_direct=True)
                 
                 q3 = f"Question: find all rows that contain the string '{query_variant}' in any column (don\'t only consider one column) (check all columns in table {current_table}) (find all, no limit)"
@@ -310,7 +310,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                 except func_timeout.exceptions.FunctionTimedOut:
                     result3 = None
                     del db_chain; llm.clear();
-                    llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                    llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                     db_chain = SQLDatabaseChain.from_llm(llm[0], db, prompt=prompt, use_query_checker=False, verbose=False, return_intermediate_steps=True,  return_direct=True)
 
                 q4 = f"Question: find all the rows that contain {query_variant} (query all columns in table {current_table} using OR) (find all, no limit)"
@@ -324,7 +324,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                 except func_timeout.exceptions.FunctionTimedOut:
                     result4 = None
                     del db_chain; llm.clear();
-                    llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                    llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                     db_chain = SQLDatabaseChain.from_llm(llm[0], db, prompt=prompt, use_query_checker=False, verbose=False, return_intermediate_steps=True,  return_direct=True)
 
                 basic_query_answers[current_table] = [(q1,result1["intermediate_steps"][-1] if result1 is not None else "sql error"),(q2,result2["intermediate_steps"][-1] if result2 is not None else "sql error"),(q3,result3["intermediate_steps"][-1] if result3 is not None else "sql error"), (q4,result4["intermediate_steps"][-1] if result4 is not None else "sql error")]
@@ -410,7 +410,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                                         c_text = None
                                         c_text_sum = None
                                         llm.clear();
-                                        llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                                        llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                                     except func_timeout.exceptions.FunctionTimedOut:
                                         
                                         #print("func_timeout.exceptions.FunctionTimedOut")
@@ -419,7 +419,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                                         c_text_sum = None
                                         llm.clear();
                                         print("re-loading ollama")
-                                        llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                                        llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
 
                                         # try again
                                         try:
@@ -430,7 +430,7 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                                             c_text_sum = "LLM running failed"
                                             llm.clear();
                                             print("re-loading ollama")
-                                            llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                                            llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                                     if c_text is not None:
                                         c_list_results[c_index]["plainText"] = f"## TableLLM Identified Record   \n**Source**: - Table {current_table_source_index+1} - Row {c_list_results[c_index][0]}  \n- **LLM extracted Variant/Genotypes with PatientID**： " + c_text +f"  \n- **LLM Translated Row Summary**: {c_text_sum}  " + f"  \n- **Source Row Details**: {str(json_tablerow)}  "
                                     if c_text is not None:
@@ -446,12 +446,12 @@ def table_extraction_n_sqlQA(current_paper_tables, model_name, query_variant_lis
                                                 c_text = None
                                                 c_text_sum = None
                                                 llm.clear();
-                                                llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                                                llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                                             except func_timeout.exceptions.FunctionTimedOut:
                                                 c_text = None
                                                 c_text_sum = None
                                                 llm.clear();
-                                                llm.append(Ollama(model=model_name, temperature=0.0, top_p = 0.9))
+                                                llm.append(Ollama(model=model_name, base_url=ollama_base_url, temperature=0.0, top_p = 0.9))
                                             if c_text is not None:
                                                 c_list_results[c_index]["plainText"] += f"\n### Adjacent rows potentially contain intrans variant: \n- **LLM extracted Variant/Genotypes with PatientID**： " + c_text +f"  \n- **LLM Translated Row Summary**: {c_text_sum}  " + f"  \n- **Source Row Details**: {str(c_tableRow)}  "
 

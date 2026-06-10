@@ -7,6 +7,7 @@ from langchain.globals import set_verbose, set_debug
 import requests
 
 from bioc import biocxml
+import io
 # Import the following stuff for implementing custom retrievers
 from typing import List, Dict
 from langchain_core.documents import Document
@@ -136,7 +137,12 @@ def load_protein_map(filename):
 def load_xml_paper(filename, filter_tables=False):
     out_doc = ''
     with open(filename, 'r', encoding='utf8') as fp:  # better use utf8
-        collection = biocxml.load(fp)
+        content = fp.read()
+    # Preprocess XML to remove invalid element names (lxml is strict)
+    # Remove control characters and invalid XML characters
+    content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', content)
+    fp_io = io.StringIO(content)
+    collection = biocxml.load(fp_io)
     document = collection.documents[0]
     for passage in document.passages:
         section_type = passage.infons.get('section_type', '').upper()
@@ -204,15 +210,23 @@ def get_answers_PM3(query, chain):
     
     return response
 
-def loadTextModel(model_name):
-    print("Loading model",model_name)
-    if "llama3" in model_name:
-        llm_a = Ollama(model=model_name,temperature=0.0, top_p = 0.9, stop=["<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>", "<|reserved_special_token"])
-    elif model_name == "phi3":
-
-        llm_a = Ollama(model=model_name,temperature=0.0, top_p = 0.9, stop=["<|user|>","<|assistant|>","<|system|>","<|end|>","<|endoftext|>", "<|reserved_special_token"])
-    else:
-        llm_a = Ollama(model=model_name,temperature=0.0, top_p = 0.9)
+def loadTextModel(model_name, base_url="http://localhost:11434", backend="ollama", api_key=None):
+    print(f"Loading model: {model_name} (backend: {backend})")
+    if backend == "deepseek":
+        from langchain_deepseek import ChatDeepSeek
+        llm_a = ChatDeepSeek(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.0,
+            top_p=0.9,
+        )
+    elif backend == "ollama":
+        if "llama3" in model_name:
+            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9, stop=["<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>", "<|reserved_special_token"])
+        elif model_name == "phi3":
+            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9, stop=["<|user|>","<|assistant|>","<|system|>","<|end|>","<|endoftext|>", "<|reserved_special_token"])
+        else:
+            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9)
     print("Loading model DONE")
     return llm_a
 
@@ -240,6 +254,25 @@ def main():
         help="paper_path of the query literature",
         required=True,
     )
+    parser.add_argument(
+        '--ollama_base_url',
+        help="Ollama server base URL",
+        required=False,
+        default='http://localhost:11434',
+    )
+    parser.add_argument(
+        '--llm_backend',
+        help="LLM backend: ollama or deepseek",
+        required=False,
+        default='ollama',
+        choices=['ollama', 'deepseek'],
+    )
+    parser.add_argument(
+        '--deepseek_api_key',
+        help="DeepSeek API key (required if --llm_backend=deepseek)",
+        required=False,
+        default=None,
+    )
 
 
     # print help message if no argument input
@@ -247,15 +280,23 @@ def main():
         parser.print_help(sys.stderr)
         sys.exit(0)
 
-    args = parser.parse_args()   
-    results = query_variant_in_paper_xml(args.query_variant,args.paper_path,args.model_name_table,args.model_name_text)
+    args = parser.parse_args()
+    results = query_variant_in_paper_xml(
+        args.query_variant, args.paper_path,
+        args.model_name_table, args.model_name_text,
+        args.ollama_base_url, args.llm_backend, args.deepseek_api_key
+    )
     print(results)
 
 
-def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text):
-    
-    llm_a = loadTextModel(model_name_text)
-    llm_table = [Ollama(model=model_name_table, temperature=0.0, top_p=0.9) ]
+def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, ollama_base_url="http://localhost:11434", llm_backend="ollama", api_key=None):
+
+    llm_a = loadTextModel(model_name_text, ollama_base_url, llm_backend, api_key)
+    if llm_backend == "deepseek":
+        from langchain_deepseek import ChatDeepSeek
+        llm_table = [ChatDeepSeek(model=model_name_table, api_key=api_key, temperature=0.0, top_p=0.9)]
+    else:
+        llm_table = [Ollama(model=model_name_table, base_url=ollama_base_url, temperature=0.0, top_p=0.9) ]
 
     # Read protein abbreviation table
     protein_map = load_protein_map(PROTEIN_MAPPING_FILE)
@@ -324,7 +365,7 @@ def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_
             #print("temp tables",tmpfile.name)
             table.to_csv(tmpfile.name,index=False)
         table_query_return = table_extraction_n_sqlQA(csv_filenames, model_name_table,
-            query_variant_list=variant_alias, llm=llm_table, llm_qa=llm_table, show_errors=False)
+            query_variant_list=variant_alias, llm=llm_table, llm_qa=llm_table, show_errors=False, ollama_base_url=ollama_base_url)
      
         # Close and delete the temp files
         for tmpfile in csv_files:
@@ -389,7 +430,7 @@ def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_
                     query_success = True
                 except func_timeout.exceptions.FunctionTimedOut:
                     del llm_a;
-                    llm_a = loadTextModel(model_name_text)
+                    llm_a = loadTextModel(model_name_text, ollama_base_url, llm_backend, api_key)
                     num_retries += 1
 
             if not query_success:
