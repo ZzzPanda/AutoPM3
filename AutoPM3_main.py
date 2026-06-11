@@ -1,4 +1,3 @@
-from langchain_community.llms import Ollama
 from langchain.text_splitter import RecursiveCharacterTextSplitter,CharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
@@ -7,13 +6,14 @@ from langchain.globals import set_verbose, set_debug
 import requests
 
 from bioc import biocxml
+from lxml import etree
 import io
 # Import the following stuff for implementing custom retrievers
 from typing import List, Dict
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
-from table_functions import table_extraction_n_sqlQA
+from table_functions import table_extraction_with_deepseek
 from utils import extractTablesFromXML
 
 set_debug(False)
@@ -31,7 +31,6 @@ import sys
 import glob
 import json
 import re
-import tempfile
 
 
 os.environ['CURL_CA_BUNDLE'] = ''  # Fix SSL error for Mutalyzer3
@@ -136,20 +135,48 @@ def load_protein_map(filename):
 # Load paper from XML file
 def load_xml_paper(filename, filter_tables=False):
     out_doc = ''
-    with open(filename, 'r', encoding='utf8') as fp:  # better use utf8
-        content = fp.read()
     # Preprocess XML to remove invalid element names (lxml is strict)
     # Remove control characters and invalid XML characters
-    content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', content)
-    fp_io = io.StringIO(content)
-    collection = biocxml.load(fp_io)
-    document = collection.documents[0]
-    for passage in document.passages:
-        section_type = passage.infons.get('section_type', '').upper()
-        if filter_tables and section_type in [ 'TABLE', 'REF', 'COMP_INT', 'AUTH_CONT', 'SUPPL' ]:
-            pass  # filter away this section
-        else:
-            out_doc += passage.text + '\n'
+    with open(filename, 'rb') as fp:
+        content = fp.read()
+    content = re.sub(rb'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', b'', content)
+
+    # Try BioC format first
+    fp_io = io.BytesIO(content)
+    try:
+        collection = biocxml.load(fp_io)
+        document = collection.documents[0]
+        for passage in document.passages:
+            section_type = passage.infons.get('section_type', '').upper()
+            if filter_tables and section_type in [ 'TABLE', 'REF', 'COMP_INT', 'AUTH_CONT', 'SUPPL' ]:
+                pass  # filter away this section
+            else:
+                out_doc += passage.text + '\n'
+    except Exception:
+        # Fallback: custom XML format - extract text from sections
+        try:
+            tree = etree.fromstring(content)
+            # For custom format with <main_content><section><content>...</content></section></main_content>
+            # Try without namespace first
+            for elem in tree.iter():
+                if elem.tag in ('content', 'abstract', 'text'):
+                    if elem.text:
+                        out_doc += elem.text + '\n'
+                # Also get text from nested sections
+                if elem.tag == 'section':
+                    for child in elem.iter():
+                        if child.tag == 'content' and child.text:
+                            out_doc += child.text + '\n'
+                # Handle main_content
+                if elem.tag == 'main_content':
+                    text = etree.tostring(elem, method='text', encoding='unicode')
+                    out_doc += text + '\n'
+        except Exception as e:
+            print(f"Error parsing XML: {e}")
+            # Last resort: try to extract text directly
+            text = tree if isinstance(tree, str) else etree.tostring(tree, method='text', encoding='unicode')
+            out_doc = text
+
     return out_doc
 
 
@@ -210,40 +237,20 @@ def get_answers_PM3(query, chain):
     
     return response
 
-def loadTextModel(model_name, base_url="http://localhost:11434", backend="ollama", api_key=None):
-    print(f"Loading model: {model_name} (backend: {backend})")
-    if backend == "deepseek":
-        from langchain_deepseek import ChatDeepSeek
-        llm_a = ChatDeepSeek(
-            model=model_name,
-            api_key=api_key,
-            temperature=0.0,
-            top_p=0.9,
-        )
-    elif backend == "ollama":
-        if "llama3" in model_name:
-            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9, stop=["<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>", "<|reserved_special_token"])
-        elif model_name == "phi3":
-            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9, stop=["<|user|>","<|assistant|>","<|system|>","<|end|>","<|endoftext|>", "<|reserved_special_token"])
-        else:
-            llm_a = Ollama(model=model_name, base_url=base_url, temperature=0.0, top_p = 0.9)
+def loadTextModel(model_name, api_key):
+    print(f"Loading model: {model_name}")
+    from langchain_deepseek import ChatDeepSeek
+    llm_a = ChatDeepSeek(
+        model=model_name,
+        api_key=api_key,
+        temperature=0.0,
+        top_p=0.9,
+    )
     print("Loading model DONE")
     return llm_a
 
 def main():
     parser = ArgumentParser(description='AutoPM3')
-    parser.add_argument(
-        '--model_name_text',
-        help="llm used for answering generated questions",
-        required=False,
-        default='llama3_loraFT-8b-f16',
-    )
-    parser.add_argument(
-        '--model_name_table',
-        help="llm used for table queries",
-        required=False,
-        default='sqlcoder-7b-Mistral-7B-Instruct-v0.2-slerp.Q8_0',
-    )
     parser.add_argument(
         '--query_variant',
         help="query variant in HGVS format",
@@ -255,23 +262,9 @@ def main():
         required=True,
     )
     parser.add_argument(
-        '--ollama_base_url',
-        help="Ollama server base URL",
-        required=False,
-        default='http://localhost:11434',
-    )
-    parser.add_argument(
-        '--llm_backend',
-        help="LLM backend: ollama or deepseek",
-        required=False,
-        default='ollama',
-        choices=['ollama', 'deepseek'],
-    )
-    parser.add_argument(
         '--deepseek_api_key',
-        help="DeepSeek API key (required if --llm_backend=deepseek)",
-        required=False,
-        default=None,
+        help="DeepSeek API key",
+        required=True,
     )
 
 
@@ -283,20 +276,15 @@ def main():
     args = parser.parse_args()
     results = query_variant_in_paper_xml(
         args.query_variant, args.paper_path,
-        args.model_name_table, args.model_name_text,
-        args.ollama_base_url, args.llm_backend, args.deepseek_api_key
+        'deepseek-chat', 'deepseek-chat',
+        args.deepseek_api_key
     )
     print(results)
 
 
-def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, ollama_base_url="http://localhost:11434", llm_backend="ollama", api_key=None):
+def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, api_key=None):
 
-    llm_a = loadTextModel(model_name_text, ollama_base_url, llm_backend, api_key)
-    if llm_backend == "deepseek":
-        from langchain_deepseek import ChatDeepSeek
-        llm_table = [ChatDeepSeek(model=model_name_table, api_key=api_key, temperature=0.0, top_p=0.9)]
-    else:
-        llm_table = [Ollama(model=model_name_table, base_url=ollama_base_url, temperature=0.0, top_p=0.9) ]
+    llm_a = loadTextModel(model_name_text, api_key)
 
     # Read protein abbreviation table
     protein_map = load_protein_map(PROTEIN_MAPPING_FILE)
@@ -353,23 +341,13 @@ def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_
    
     if relevant_tables:
         variant_alias = [c_variant_id, c_protein_id[0]] if protein is not None and len(c_protein_id) > 0 else [c_variant_id]
-    
-        csv_files = []
-        csv_filenames = []
-        # Write the extracted tables to temporary CSV files
-        for table in relevant_tables:
-            
-            tmpfile = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=True)
-            csv_files.append(tmpfile)
-            csv_filenames.append(tmpfile.name)
-            #print("temp tables",tmpfile.name)
-            table.to_csv(tmpfile.name,index=False)
-        table_query_return = table_extraction_n_sqlQA(csv_filenames, model_name_table,
-            query_variant_list=variant_alias, llm=llm_table, llm_qa=llm_table, show_errors=False, ollama_base_url=ollama_base_url)
-     
-        # Close and delete the temp files
-        for tmpfile in csv_files:
-            tmpfile.close()
+
+        table_query_return = table_extraction_with_deepseek(
+            relevant_tables,
+            query_variant_list=variant_alias,
+            model_name="deepseek-v4-flash",
+            api_key=api_key
+        )
 
         if table_query_return is None:
             
@@ -430,7 +408,7 @@ def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_
                     query_success = True
                 except func_timeout.exceptions.FunctionTimedOut:
                     del llm_a;
-                    llm_a = loadTextModel(model_name_text, ollama_base_url, llm_backend, api_key)
+                    llm_a = loadTextModel(model_name_text, api_key)
                     num_retries += 1
 
             if not query_success:

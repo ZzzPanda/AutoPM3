@@ -136,27 +136,74 @@ def convert2DF(xml_data):
 def extractTablesFromXML(XML_path):
 
     '''
-    
+
     XML_path: the path of the XML paper file
 
     return a list of dataframes, each df represents one table
-    
+
     '''
     all_tables = []
-    with biocxml.iterparse(XML_path) as reader:
-        for document in reader:
-            for i in range(len(document.passages)):
-                if(document.passages[i].infons['type']!='table'):
-                    continue
-                cur_table_xml = document.passages[i].infons['xml']
-                table_name = document.passages[i].infons['id']
-                
-                df = convert2DF(cur_table_xml)
-                
+
+    # Try BioC format first
+    try:
+        with biocxml.iterparse(XML_path) as reader:
+            for document in reader:
+                for i in range(len(document.passages)):
+                    if(document.passages[i].infons['type']!='table'):
+                        continue
+                    cur_table_xml = document.passages[i].infons['xml']
+                    table_name = document.passages[i].infons['id']
+
+                    df = convert2DF(cur_table_xml)
+
+                    all_tables.append(df)
+        return all_tables
+    except Exception:
+        pass
+
+    # Fallback: custom XML format with <tables><table><thead><tbody>
+    try:
+        from lxml import etree
+        tree = etree.parse(XML_path)
+        root = tree.getroot()
+
+        # Find all <table> elements
+        tables = root.findall('.//table')
+        for tbl in tables:
+            # Get header rows
+            thead = tbl.find('thead')
+            header_data = []
+            if thead:
+                for tr in thead.findall('.//tr'):
+                    row = [td.text.strip() if td.text else '' for td in tr.findall('.//td')]
+                    header_data.append(row)
+
+            # Get body rows
+            tbody = tbl.find('tbody')
+            body_data = []
+            if tbody:
+                for tr in tbody.findall('.//tr'):
+                    row = [td.text.strip() if td.text else '' for td in tr.findall('.//td')]
+                    body_data.append(row)
+
+            if header_data and body_data:
+                # Merge multiple header rows
+                if len(header_data) > 1:
+                    merged_header = [' '.join(col) for col in zip(*header_data)]
+                else:
+                    merged_header = header_data[0]
+
+                df = pd.DataFrame(body_data, columns=merged_header)
                 all_tables.append(df)
-                
-    
-            
+            elif body_data:
+                # No header, use first row as header
+                if len(body_data) > 1:
+                    df = pd.DataFrame(body_data[1:], columns=body_data[0])
+                    all_tables.append(df)
+
+    except Exception as e:
+        print(f"Error extracting tables from custom XML: {e}")
+
     return all_tables
     pass
 
