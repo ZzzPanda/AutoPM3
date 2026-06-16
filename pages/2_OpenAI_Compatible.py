@@ -45,13 +45,18 @@ Use this page if you want to use your own **OpenAI-compatible API endpoint**
 (e.g., local models, proxy servers, or other LLM providers).
 """)
 
+secrets = st.secrets if hasattr(st, "secrets") else {}
+
 col1, col2 = st.columns(2)
 with col1:
-    api_url = st.text_input('API URL', placeholder='https://api.openai.com/v1', help='OpenAI-compatible API endpoint URL')
+    api_url = st.text_input('API URL', placeholder='https://api.openai.com/v1', help='OpenAI-compatible API endpoint URL',
+                            value=secrets.get("openai_api_url", ""))
 with col2:
-    model_name = st.text_input('Model Name', placeholder='gpt-4o-mini', help='Model name to use')
+    model_name = st.text_input('Model Name', placeholder='gpt-4o-mini', help='Model name to use',
+                               value=secrets.get("openai_model", ""))
 
-api_key = st.text_input('API Key', type='password', key='api_key_openai')
+api_key = st.text_input('API Key', type='password', key='api_key_openai',
+                         value=secrets.get("openai_api_key", ""))
 
 st.header("Upload XML")
 if st.button('Example', type='primary'):

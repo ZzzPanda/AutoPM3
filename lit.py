@@ -38,7 +38,8 @@ def run_query(variant_name, xml_path, api_key):
 st.set_page_config(page_title="AutoPM3 - DeepSeek")
 st.title('AutoPM3 - DeepSeek')
 
-api_key = st.text_input('DeepSeek API Key', type='password', key='api_key')
+default_key = st.secrets.get("deepseek_api_key", "") if hasattr(st, "secrets") else ""
+api_key = st.text_input('DeepSeek API Key', type='password', key='api_key', value=default_key)
 
 st.header("Upload XML")
 if st.button('Example', type='primary'):
