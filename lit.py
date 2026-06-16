@@ -35,7 +35,8 @@ def run_query(variant_name, xml_path, api_key):
 
 
 # Main
-st.title('AutoPM3')
+st.set_page_config(page_title="AutoPM3 - DeepSeek")
+st.title('AutoPM3 - DeepSeek')
 
 api_key = st.text_input('DeepSeek API Key', type='password', key='api_key')
 

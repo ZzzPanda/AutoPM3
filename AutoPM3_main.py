@@ -282,9 +282,21 @@ def main():
     print(results)
 
 
-def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, api_key=None):
+def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, api_key=None, api_url=None):
 
-    llm_a = loadTextModel(model_name_text, api_key)
+    if api_url:
+        from langchain_openai import ChatOpenAI
+        print(f"Loading OpenAI-compatible model: {model_name_text} at {api_url}")
+        llm_a = ChatOpenAI(
+            model=model_name_text,
+            api_key=api_key,
+            base_url=api_url,
+            temperature=0.0,
+            top_p=0.9,
+        )
+        print("Loading model DONE")
+    else:
+        llm_a = loadTextModel(model_name_text, api_key)
 
     # Read protein abbreviation table
     protein_map = load_protein_map(PROTEIN_MAPPING_FILE)
@@ -345,8 +357,9 @@ def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_
         table_query_return = table_extraction_with_deepseek(
             relevant_tables,
             query_variant_list=variant_alias,
-            model_name="deepseek-v4-flash",
-            api_key=api_key
+            model_name=model_name_table,
+            api_key=api_key,
+            api_url=api_url
         )
 
         if table_query_return is None:

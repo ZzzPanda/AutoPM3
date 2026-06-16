@@ -141,7 +141,7 @@ Limit your answer under 100 words and don't repeat the context or any info you a
 
 
 
-def table_extraction_with_deepseek(current_paper_tables, query_variant_list, model_name="deepseek-v4-flash", api_key=None):
+def table_extraction_with_deepseek(current_paper_tables, query_variant_list, model_name="deepseek-v4-flash", api_key=None, api_url=None):
     """
     使用 DeepSeek 模型直接从 CSV 表格内容中查找 variant
     替代原来的 sqlcoder + SQLDatabaseChain 方式
@@ -151,13 +151,17 @@ def table_extraction_with_deepseek(current_paper_tables, query_variant_list, mod
         query_variant_list: variant 列表，如 ['1319', '440', 'c.1319T>G']
         model_name: DeepSeek 模型名
         api_key: DeepSeek API key
+        api_url: OpenAI-compatible API URL (optional)
 
     Returns:
         [answers_list, variant_found] - 与原接口兼容
     """
-    from langchain_deepseek import ChatDeepSeek
-
-    llm = ChatDeepSeek(model=model_name, api_key=api_key, temperature=0.0, top_p=0.9)
+    if api_url:
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=api_url, temperature=0.0, top_p=0.9)
+    else:
+        from langchain_deepseek import ChatDeepSeek
+        llm = ChatDeepSeek(model=model_name, api_key=api_key, temperature=0.0, top_p=0.9)
 
     df_list = []
     for c_table in current_paper_tables:
