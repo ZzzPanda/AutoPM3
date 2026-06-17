@@ -62,6 +62,7 @@ Thumbs.db
 
 # Streamlit runtime artefacts / data
 xml/
+data/
 **/*.pdf
 **/*.bib
 **/*.csv
