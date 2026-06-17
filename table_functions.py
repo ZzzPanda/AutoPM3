@@ -12,6 +12,7 @@ import ast
 import textwrap
 import os
 import time
+import asyncio
 from argparse import ArgumentParser
 import sys
 import glob
@@ -30,9 +31,20 @@ from func_timeout import func_set_timeout
 import func_timeout
 
 
+# Reuse the LLM semaphore / thread pool defined in AutoPM3_main so table
+# queries are subject to the same global concurrency cap as text queries.
+# Imported lazily inside ``table_extraction_with_deepseek`` to avoid an
+# import cycle (table_functions is imported by AutoPM3_main).
+
+
 import sqlite3
 
 langchain.verbose = False
+
+# Per-table LLM call timeout. Matches the value used in AutoPM3_main.py
+# for the text-query path so a hung upstream call doesn't pin a
+# semaphore slot forever under concurrent load.
+LLM_TIMEOUT_SECONDS = 300
 
 TABLE_PARAMETER = "{TABLE_PARAMETER}"
 c_tr_index = "{c_tr_index}"
@@ -141,21 +153,23 @@ Limit your answer under 100 words and don't repeat the context or any info you a
 
 
 
-def table_extraction_with_deepseek(current_paper_tables, query_variant_list, model_name="deepseek-v4-flash", api_key=None, api_url=None):
-    """
-    使用 DeepSeek 模型直接从 CSV 表格内容中查找 variant
-    替代原来的 sqlcoder + SQLDatabaseChain 方式
+async def table_extraction_with_deepseek(current_paper_tables, query_variant_list, model_name="deepseek-v4-flash", api_key=None, api_url=None):
+    """Async table query. Fans out one LLM call per table, gated by the
+    global LLM semaphore and run on the LLM thread pool.
 
-    Args:
-        current_paper_tables: list of DataFrame 或 CSV 文件路径列表
-        query_variant_list: variant 列表，如 ['1319', '440', 'c.1319T>G']
-        model_name: DeepSeek 模型名
-        api_key: DeepSeek API key
-        api_url: OpenAI-compatible API URL (optional)
-
-    Returns:
-        [answers_list, variant_found] - 与原接口兼容
+    Returns the same ``[answers_list, variant_found]`` shape as the old
+    sync version for compatibility. The list order is preserved by sorting
+    on the table index after gather — gather may complete in any order.
     """
+    # Lazy import: table_functions is imported by AutoPM3_main, so a
+    # top-level import here would cycle. ``import AutoPM3_main as
+    # _am`` lets us reach into the module to read the (lazily-initialised)
+    # semaphore and pool; if we did ``from AutoPM3_main import
+    # _llm_semaphore`` we'd capture the *initial* value (None) and miss
+    # the runtime-initialised one.
+    import AutoPM3_main as _am
+    _am._init_async_runtime()
+
     if api_url:
         from langchain_openai import ChatOpenAI
         llm = ChatOpenAI(model=model_name, api_key=api_key, base_url=api_url, temperature=0.0, top_p=0.9)
@@ -180,13 +194,15 @@ def table_extraction_with_deepseek(current_paper_tables, query_variant_list, mod
         print(df.to_string())
     print("=" * 50)
 
-    # 不再过滤，直接把所有表格交给模型判断
-    basic_query_answers_list = []
+    if not df_list:
+        return [[], True]
 
-    for idx, df in enumerate(df_list):
+    query_text = " ".join(str(v) for v in query_variant_list)
+
+    loop = asyncio.get_running_loop()
+
+    async def _query_one_table(idx, df):
         csv_content = df.to_csv(index=False)
-
-        query_text = " ".join(str(v) for v in query_variant_list)
         prompt = f"""You are a scientific research assistant. Given this table from a biomedical paper:
 
 --- Table {idx + 1} ---
@@ -202,15 +218,35 @@ If no variants are found, respond with: "No variant match in this table"
 
 Answer:"""
 
-        try:
-            response = llm.invoke(prompt)
-            answer_text = response.content if hasattr(response, 'content') else str(response)
+        # Acquire the global LLM semaphore and call the LLM asynchronously
+        # with a bounded timeout. Using ``ainvoke`` (not ``invoke`` in a
+        # thread-pool) means the call is actually cancelable: if the
+        # upstream LLM API hangs, ``asyncio.wait_for`` will cancel the
+        # underlying HTTP request and free the semaphore slot. With
+        # ``invoke`` in a thread pool, a hung request would block a
+        # worker forever and eventually exhaust the pool under concurrent
+        # load.
+        async with _am._llm_semaphore:
+            try:
+                response = await asyncio.wait_for(
+                    llm.ainvoke(prompt),
+                    timeout=LLM_TIMEOUT_SECONDS,
+                )
+                answer_text = response.content if hasattr(response, 'content') else str(response)
+                return (idx, (f"table_{idx}", [{"plainText": answer_text}]))
+            except Exception as e:
+                print(f"Error querying table {idx}: {e}")
+                return (idx, (f"table_{idx}", [{"plainText": f"Error: {e}"}]))
 
-            # 兼容原接口格式
-            basic_query_answers_list.append((f"table_{idx}", [{"plainText": answer_text}]))
-        except Exception as e:
-            print(f"Error querying table {idx}: {e}")
-            basic_query_answers_list.append([(f"table_{idx}", [{"plainText": f"Error: {e}"}])])
+    gathered = await asyncio.gather(
+        *(_query_one_table(idx, df) for idx, df in enumerate(df_list)),
+        return_exceptions=False,
+    )
+    # Re-order to match the original sequential order. ``gather`` returns
+    # results in input order when ``return_exceptions=False`` and no task
+    # raised, so the sort is defensive (and free).
+    gathered.sort(key=lambda x: x[0])
+    basic_query_answers_list = [item for _, item in gathered]
 
-    return [basic_query_answers_list, True]  # True = 告诉调用方有表格内容
+    return [basic_query_answers_list, True]
 
