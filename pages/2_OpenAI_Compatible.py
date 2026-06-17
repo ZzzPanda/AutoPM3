@@ -38,6 +38,24 @@ def run_query_openai(variant_name, xml_path, api_url, model_name, api_key):
 # Page config
 st.set_page_config(page_title="AutoPM3 - OpenAI Compatible", page_icon="🤖")
 
+# Inject CSS for fixed-pixel centering of the result region.
+# The .result-region-marker div is emitted right before the output is rendered —
+# everything that follows it in the same Streamlit vertical block gets
+# constrained to a fixed `max-width` and centered. Uses the modern `:has()`
+# + sibling `~` selector to scope the rule to widgets that appear *after*
+# the marker (inputs/buttons above the marker stay full-width).
+RESULT_REGION_CSS = """
+<style>
+div:has(> .result-region-marker) ~ div {
+    max-width: 1200px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+</style>
+"""
+st.markdown(RESULT_REGION_CSS, unsafe_allow_html=True)
+
+
 st.title("AutoPM3 - OpenAI Compatible 🤖")
 
 st.markdown("""
@@ -70,6 +88,7 @@ if st.button('Run', type='primary', key='run_xml_openai'):
         try:
             xml_path = extract_xml_content(xml_file)
             summarized_results = run_query_openai(variant_name, xml_path, api_url, model_name, api_key)
+            st.markdown('<div class="result-region-marker"></div>', unsafe_allow_html=True)
             st.write(summarized_results)
         except Exception as e:
             st.write('An error has occurred.')
