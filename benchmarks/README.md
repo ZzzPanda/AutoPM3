@@ -1,9 +1,11 @@
 # PM3-Bench
 
+[English](./README.md) | [简体中文](./README.zh.md)
+
 ## Introduction
 The [ClinGen Evidence Repository](https://erepo.clinicalgenome.org/evrepo/)  provides expert-curated assertions, they are written in plain English, posing a difficult challenge for automated evaluation of benchmarks. To address this, we created PM3-Bench, a comprehensive dataset for PM3 literature evidence extraction, based on the ClinGen Evidence Repository
 
-![](../images/PM3-bench.png)
+![](../docs/images/PM3-bench.png)
 
 ---
 

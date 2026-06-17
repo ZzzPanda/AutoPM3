@@ -15,6 +15,15 @@
 
 set -euo pipefail
 
+# ---------- paths ----------
+# Resolve project root from this script's own location so the build works
+# no matter where it's invoked from (project root, scripts/, or elsewhere).
+# The previous implementation used `..` as the build context, which only
+# worked when the CWD was scripts/ — running `./scripts/build.sh` from the
+# project root sent Docker looking in <project-parent>/, not <project>/.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # ---------- args ----------
 VERSION_RAW="dev"
 VERSION_SET="false"
@@ -142,7 +151,8 @@ if [[ "${SAVE_TAR}" == "true" ]]; then
       --platform "${platform}" \
       --load \
       "${build_args[@]}" \
-      .
+      -f "$PROJECT_ROOT/docker/Dockerfile" \
+      "$PROJECT_ROOT"
 
     echo
     echo "==> Saving ${platform} to ${OUT}"
@@ -153,7 +163,8 @@ if [[ "${SAVE_TAR}" == "true" ]]; then
 else
   docker build \
     "${build_args[@]}" \
-    .
+    -f "$PROJECT_ROOT/docker/Dockerfile" \
+    "$PROJECT_ROOT"
 fi
 
 # ---------- optional push ----------

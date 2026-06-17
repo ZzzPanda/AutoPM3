@@ -1,5 +1,7 @@
 # Secrets
 .streamlit/secrets.toml
+config/.env
+config/.streamlit/secrets.toml
 
 # Python
 __pycache__/
@@ -7,8 +9,9 @@ __pycache__/
 *.egg-info/
 .venv/
 
-# Streamlit
-.xml_papers/
+# Runtime data — outputs of download_papers.py
+data/xml_papers/
+data/pdf_convert/
 
 # IDE
 .DS_Store

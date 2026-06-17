@@ -1,6 +1,6 @@
 """
 Download papers from NCBI based on PM3_Bench_data.json
-Saves XML files to ./xml_papers/{pmid}.xml
+Saves XML files to ./data/xml_papers/{pmid}.xml
 """
 import json
 import os
@@ -8,7 +8,7 @@ import time
 import requests
 from tqdm import tqdm
 
-def download_paper(pmid, output_dir="./xml_papers", max_retries=3):
+def download_paper(pmid, output_dir="./data/xml_papers", max_retries=3):
     """Download a single paper from NCBI BioNLP API"""
     url = f'https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_xml/{pmid}/unicode'
     output_path = os.path.join(output_dir, f"{pmid}.xml")
@@ -50,11 +50,11 @@ def download_paper(pmid, output_dir="./xml_papers", max_retries=3):
 
 def main():
     # Create output directory
-    output_dir = "./xml_papers"
+    output_dir = "./data/xml_papers"
     os.makedirs(output_dir, exist_ok=True)
 
     # Load PM3-Bench data
-    data_file = "./PM3-Bench/PM3_Bench_data.json"
+    data_file = "./benchmarks/PM3_Bench_data.json"
     with open(data_file, 'r') as f:
         data = json.load(f)
 

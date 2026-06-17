@@ -1,12 +1,44 @@
 # AutoPM3 部署与本地测试指南
 
-本项目是一个基于 Streamlit 的多页面应用，入口为 `lit.py`（DeepSeek 页面）和 `pages/` 下的其它页面。下面分别说明：
+本项目是一个基于 Streamlit 的多页面应用，入口为 `app/main.py`（DeepSeek 页面）和 `app/pages/` 下的其它页面。下面分别说明：
 
+0. [项目结构速览](#0-项目结构速览)
 1. [本地直接用 Python 跑（开发推荐）](#1-本地直接用-python-跑开发推荐)
 2. [用 Docker Compose 跑（最省事）](#2-用-docker-compose-跑最省事)
 3. [用 `scripts/build.sh` 打版本化镜像](#3-用-scriptsbuildsh-打版本化镜像)
 4. [手动 `docker build` / `docker run`](#4-手动-docker-build--docker-run)
 5. [配置项 & 优先级](#5-配置项--优先级)
+
+---
+
+## 0. 项目结构速览
+
+```
+AutoPM3/
+├── app/                       # 所有 Python 源码（包）
+│   ├── main.py                # Streamlit 入口（DeepSeek 页面）
+│   ├── pages/                 # 其它 Streamlit 页面（如 OpenAI Compatible）
+│   ├── core/                  # 核心逻辑（query、table_functions、utils、streamlit_helpers）
+│   ├── data_io/               # 离线工具（如 download_papers.py）
+│   └── mineru/                # MinerU API 客户端（含 tests/）
+│
+├── data/                      # 运行时数据
+│   ├── protein.txt            # 蛋白缩写映射（app 启动时读）
+│   ├── xml_papers/            # download_papers.py 的输出
+│   └── pdf_convert/           # MinerU 转换示例
+│
+├── benchmarks/                # PM3-Bench 评测数据集
+├── docs/                      # 架构图 / 会议记录 / 开发计划
+├── scripts/build.sh           # 版本化打 tag 工具
+├── docker/                    # Dockerfile + docker-compose.yml
+└── config/                    # 凭据模板（.env.example, secrets.toml.example）
+```
+
+注意：
+
+- **真实 `secrets.toml` 必须在项目根的 `.streamlit/secrets.toml`**（Streamlit 默认搜索路径），不能放到 `config/`。
+- **`.dockerignore` 必须在项目根**（Docker 工具链约束，从 build context 根读取）。
+- **Dockerfile 用 `COPY app ./app` + `COPY data/protein.txt ./data/protein.txt`**：只把运行时需要的部分塞进镜像，docs/、benchmarks/、config/ 等不进镜像。
 
 ---
 
@@ -46,7 +78,9 @@ pip install -r requirements.txt
 **方式 A：`.streamlit/secrets.toml`（Streamlit 原生方式，推荐本地用）**
 
 ```bash
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# 模板在 config/，但真实的 secrets.toml 必须放在项目根的 .streamlit/ 下
+# （Streamlit 启动时只从入口脚本所在目录或 ~/.streamlit 读 secrets.toml）
+cp config/.streamlit/secrets.toml.example .streamlit/secrets.toml
 # 编辑 .streamlit/secrets.toml，填入真实 Key
 ```
 
@@ -76,7 +110,7 @@ export OPENAI_API_KEY="sk-xxx"
 ### 1.4 启动
 
 ```bash
-streamlit run lit.py
+streamlit run app/main.py
 ```
 
 控制台会打印类似：
@@ -91,9 +125,9 @@ You can now view your Streamlit app in your browser.
 
 ### 1.5 常见坑
 
-- **改了 secrets 不生效**：`secrets.toml` 是启动时读取的，保存后 Streamlit 会自动重启；如果没重启，手动 `Ctrl+C` 终止再 `streamlit run lit.py`。
+- **改了 secrets 不生效**：`secrets.toml` 是启动时读取的，保存后 Streamlit 会自动重启；如果没重启，手动 `Ctrl+C` 终止再 `streamlit run app/main.py`。
 - **`ModuleNotFoundError`**：没激活 venv，或者装错环境。`which python` 看一下是不是 `.venv/bin/python`。
-- **端口被占用**：`streamlit run lit.py --server.port=8502`。
+- **端口被占用**：`streamlit run app/main.py --server.port=8502`。
 
 ---
 
@@ -109,8 +143,9 @@ You can now view your Streamlit app in your browser.
 ### 2.2 可选：创建 `.env` 预置默认值
 
 ```bash
-cp .env.example .env
-# 编辑 .env，填入真实 Key
+cp config/.env.example config/.env
+# 编辑 config/.env，填入真实 Key
+# docker-compose.yml 已经配好 env_file: ../config/.env，compose up 时自动读取
 ```
 
 模板：
@@ -225,10 +260,11 @@ docker inspect autopm3:1.0.0 --format '{{ index .Config.Labels "org.opencontaine
 
 ## 4. 手动 `docker build` / `docker run`
 
-如果不想用 `build.sh`，直接调 `docker build` 也可以：
+如果不想用 `build.sh`，直接调 `docker build` 也可以（build context 是项目根，Dockerfile 在 `docker/`）：
 
 ```bash
-docker build -t autopm3 .
+# 从项目根运行（build context 是 .）
+docker build -f docker/Dockerfile -t autopm3 .
 docker run -p 8501:8501 --rm autopm3
 ```
 
@@ -255,7 +291,7 @@ docker run -p 8501:8501 --rm \
 
 | 环境变量                | secrets.toml key        | 用途                       |
 | ----------------------- | ----------------------- | -------------------------- |
-| `DEEPSEEK_API_KEY`      | `deepseek_api_key`      | `lit.py` 页面 DeepSeek Key |
+| `DEEPSEEK_API_KEY`      | `deepseek_api_key`      | `app/main.py` 页面 DeepSeek Key |
 | `OPENAI_API_URL`        | `openai_api_url`        | OpenAI 兼容页面 base URL   |
 | `OPENAI_MODEL`          | `openai_model`          | OpenAI 兼容页面模型名      |
 | `OPENAI_API_KEY`        | `openai_api_key`        | OpenAI 兼容页面 Key        |

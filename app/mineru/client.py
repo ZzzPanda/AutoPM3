@@ -631,14 +631,15 @@ class LocalParseRequest:
     end_page_id: int | None = None
     server_url: str | None = None  # required for `*-http-client` backends
 
-    def to_form(self) -> dict[tuple[str, str], str]:
-        """Serialize to ``requests``-style multipart form fields.
+    def to_form(self) -> list[tuple[str, str]]:
+        """Serialize to a list of ``(name, value)`` pairs suitable for
+        ``requests`` ``data=...`` and ``files=...`` arguments.
 
         ``lang_list`` is sent as repeated ``lang_list`` keys (one per element).
         """
-        fields: dict[tuple[str, str], str] = {}
+        fields: list[tuple[str, str]] = []
         for lang in self.lang_list:
-            fields[("lang_list", "")] = lang
+            fields.append(("lang_list", lang))
         for key, value in (
             ("backend", self.backend),
             ("parse_method", self.parse_method),
@@ -653,11 +654,11 @@ class LocalParseRequest:
             ("return_original_file", str(self.return_original_file).lower()),
             ("start_page_id", str(self.start_page_id)),
         ):
-            fields[(key, "")] = value
+            fields.append((key, value))
         if self.end_page_id is not None:
-            fields[("end_page_id", "")] = str(self.end_page_id)
+            fields.append(("end_page_id", str(self.end_page_id)))
         if self.server_url is not None:
-            fields[("server_url", "")] = self.server_url
+            fields.append(("server_url", self.server_url))
         return fields
 
 
@@ -689,13 +690,13 @@ class MinerULocalClient:
         self,
         path: str,
         files: list[tuple[str, tuple[str, io.BufferedReader, str]]],
-        form: dict[tuple[str, str], str] | None = None,
+        form: list[tuple[str, str]] | None = None,
     ) -> requests.Response:
         url = f"{self.base_url}{path}"
         return self._session.post(
             url,
             files=files,
-            data=form or {},
+            data=form or [],
             timeout=300,
         )
 

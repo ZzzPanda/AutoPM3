@@ -1,9 +1,19 @@
+# Make the project root importable when launched via `streamlit run app/main.py`.
+# Streamlit inserts the script's directory (app/pages/) into sys.path[0], which
+# hides the `app` package from absolute imports. Inserting the project root up
+# front lets `from app.core...` resolve correctly without requiring PYTHONPATH.
+import sys
+from pathlib import Path
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import streamlit as st
 import os
 import traceback
 
-from AutoPM3_main import query_variant_in_paper_xml, format_mutalyzer_diagnostics
-from streamlit_helpers import (
+from app.core.query import query_variant_in_paper_xml, format_mutalyzer_diagnostics
+from app.core.streamlit_helpers import (
     config_value,
     extract_paper_content,
     render_result,
@@ -154,7 +164,7 @@ with run_col:
     run_clicked = st.button('Run', type='primary', key='run_xml_openai')
 # Run Test is a developer-only affordance for previewing the result layout
 # without making real API calls. Hidden by default; opt in at launch time with:
-#     TEST_MODE=ON streamlit run lit.py
+#     TEST_MODE=ON streamlit run app/main.py
 # (or set TEST_MODE in your shell / .env). Comparing to the literal "ON" keeps
 # accidental `TEST_MODE=1` or `TEST_MODE=true` from enabling it silently.
 with test_col:

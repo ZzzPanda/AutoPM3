@@ -31,17 +31,17 @@ from func_timeout import func_set_timeout
 import func_timeout
 
 
-# Reuse the LLM semaphore / thread pool defined in AutoPM3_main so table
+# Reuse the LLM semaphore / thread pool defined in app.core.query so table
 # queries are subject to the same global concurrency cap as text queries.
 # Imported lazily inside ``table_extraction_with_deepseek`` to avoid an
-# import cycle (table_functions is imported by AutoPM3_main).
+# import cycle (table_functions is imported by app.core.query).
 
 
 import sqlite3
 
 langchain.verbose = False
 
-# Per-table LLM call timeout. Matches the value used in AutoPM3_main.py
+# Per-table LLM call timeout. Matches the value used in app/core/query.py
 # for the text-query path so a hung upstream call doesn't pin a
 # semaphore slot forever under concurrent load.
 LLM_TIMEOUT_SECONDS = 300
@@ -161,13 +161,13 @@ async def table_extraction_with_deepseek(current_paper_tables, query_variant_lis
     sync version for compatibility. The list order is preserved by sorting
     on the table index after gather — gather may complete in any order.
     """
-    # Lazy import: table_functions is imported by AutoPM3_main, so a
-    # top-level import here would cycle. ``import AutoPM3_main as
+    # Lazy import: table_functions is imported by app.core.query, so a
+    # top-level import here would cycle. ``from app.core import query as
     # _am`` lets us reach into the module to read the (lazily-initialised)
-    # semaphore and pool; if we did ``from AutoPM3_main import
+    # semaphore and pool; if we did ``from app.core.query import
     # _llm_semaphore`` we'd capture the *initial* value (None) and miss
     # the runtime-initialised one.
-    import AutoPM3_main as _am
+    from app.core import query as _am
     _am._init_async_runtime()
 
     if api_url:

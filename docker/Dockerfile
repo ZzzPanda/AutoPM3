@@ -31,8 +31,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         pip install -r requirements.txt; \
     fi
 
-# Copy application code (kept as a separate layer for cache friendliness)
-COPY . .
+# Copy application code (kept as a separate layer for cache friendliness).
+# Use explicit COPY (not `COPY . .`) so the image only contains what the app
+# actually needs — docs/, benchmarks/, docker/, config/ etc. are excluded
+# by virtue of not being copied. `data/protein.txt` is the only data file
+# required at runtime (resolved via __file__ from app/core/query.py).
+COPY app ./app
+COPY data/protein.txt ./data/protein.txt
 
 # Surface the same metadata to the running process so the app can show it
 ENV APP_VERSION=${VERSION} \
@@ -43,4 +48,4 @@ ENV APP_VERSION=${VERSION} \
 EXPOSE 8501
 
 # Default command — runs main page
-CMD ["streamlit", "run", "lit.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]

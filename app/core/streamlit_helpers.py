@@ -1,6 +1,6 @@
 """Shared helpers for the AutoPM3 Streamlit pages.
 
-The two pages (``lit.py`` and ``pages/2_OpenAI_Compatible.py``) used to ship
+The two pages (``app/main.py`` and ``app/pages/2_OpenAI_Compatible.py``) used to ship
 byte-for-byte identical copies of ``extract_paper_content`` and
 ``render_result``. They also wrote user uploads to the process-wide
 ``tempfile`` directory with ``delete=False``, leaking files forever and

@@ -1,5 +1,7 @@
 # MinerU Integration
 
+[English](./README.md) | [简体中文](./README.zh.md)
+
 A small client that wraps the [MinerU](https://mineru.net/apiManage/docs) cloud
 APIs for converting PDF / image / DOCX / PPTX / XLSX files into structured
 **Markdown** and **JSON** outputs. Designed to slot into AutoPM3's literature

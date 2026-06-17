@@ -11,6 +11,7 @@ Dockerfile.*
 docker-compose.yml
 docker-compose.*.yml
 .docker/
+docker/
 
 # Saved image exports — `COPY . .` would otherwise re-bake every .tar
 # into the next image, making it grow across builds.
@@ -49,7 +50,8 @@ htmlcov/
 **/secrets.toml
 **/*.pem
 **/*.key
-xml_papers/
+config/.env
+config/.streamlit/secrets.toml
 
 # IDE / OS
 .DS_Store
@@ -60,9 +62,15 @@ xml_papers/
 *~
 Thumbs.db
 
-# Streamlit runtime artefacts / data
+# Runtime data — exclude everything in data/ by default; only
+# data/protein.txt is whitelisted because the app reads it at runtime.
+data/*
+!data/protein.txt
+data/xml_papers/
+data/pdf_convert/
+
+# Streamlit runtime artefacts
 xml/
-data/
 **/*.pdf
 **/*.bib
 **/*.csv
@@ -70,7 +78,7 @@ data/
 **/*.jsonl
 
 # Build helpers (downloader, build scripts, etc.)
-download_papers.py
+app/data_io/
 scripts/
 
 # Build artefacts
@@ -86,10 +94,10 @@ dist/
 *.egg
 *.whl
 
-# Local docs / notes
-doc/
+# Local docs / notes / benchmarks
+docs/
+benchmarks/
 *.md
 LICENSE
 DEPLOY.md
 README.md
-images/

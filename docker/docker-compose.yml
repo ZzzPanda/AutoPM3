@@ -1,0 +1,14 @@
+services:
+  autopm3:
+    # Build context is the project root so the Dockerfile can COPY app/
+    # and data/protein.txt from there.
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8501:8501"
+    # Load user-provided secrets/defaults from config/.env. Copy
+    # config/.env.example to config/.env and fill in your keys.
+    env_file:
+      - ../config/.env
+    restart: unless-stopped

@@ -13,8 +13,8 @@ from typing import List, Dict, Optional
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
-from table_functions import table_extraction_with_deepseek
-from utils import extractTablesFromXML
+from app.core.table_functions import table_extraction_with_deepseek
+from app.core.utils import extractTablesFromXML
 
 set_debug(False)
 
@@ -71,6 +71,7 @@ import asyncio
 import atexit
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import List, Dict, Optional, Any
 import sys
 import glob
@@ -82,7 +83,10 @@ import httpx
 
 os.environ['CURL_CA_BUNDLE'] = ''  # Fix SSL error for Mutalyzer3
 
-PROTEIN_MAPPING_FILE = './protein.txt'
+# Resolve protein.txt relative to the project root (parent of app/), not CWD.
+# app/core/query.py → parents[2] = project root
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROTEIN_MAPPING_FILE = str(_PROJECT_ROOT / 'data' / 'protein.txt')
 
 # enum types
 VARIANT_QUERY = 0

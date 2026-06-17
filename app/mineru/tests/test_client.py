@@ -1,4 +1,4 @@
-"""Tests for :mod:`mineru.client`.
+"""Tests for :mod:`app.mineru.client`.
 
 The suite is split into three layers:
 
@@ -6,14 +6,17 @@ The suite is split into three layers:
   logic against a mocked ``requests.Session`` so they run offline.
 * **Local-server tests** — exercise the ``MinerULocalClient`` against a mocked
   ``mineru-api`` server (no GPU / no install required).
-* **Live tests** — gated behind the ``MINERU_LIVE`` environment variable, they
-  hit the real cloud API and require ``MINERU_TOKEN`` plus a reachable PDF URL.
-  ``MINERU_LOCAL_LIVE`` runs the local-server tests against a real
-  ``mineru-api`` process (start it with ``mineru-api --port 8000``).
+* **Live tests** — gated by env vars, hit the real cloud API or a running
+  local ``mineru-api`` process:
+  - ``MINERU_AGENT_LIVE=1`` — Agent API (no token, just an IP)
+  - ``MINERU_LIVE=1`` + ``MINERU_TOKEN=...`` — precise v4 API
+  - ``MINERU_LOCAL_LIVE=1`` — real local ``mineru-api`` on :8000
 
 Run with stdlib unittest:
 
-    python -m unittest discover mineru/tests
+    python -m unittest discover -s app/mineru/tests
+    # Or just the agent test (no token):
+    MINERU_AGENT_LIVE=1 python -m unittest app.mineru.tests.test_client.LiveAgentOnlyTests
 """
 
 from __future__ import annotations
@@ -29,7 +32,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 
-from mineru import (
+from app.mineru import (
     AGENT_DONE,
     AGENT_FAILED,
     LOCAL_BACKEND_HYBRID,
@@ -91,19 +94,19 @@ def _make_zip(members: dict[str, str] | None = None) -> bytes:
 
 class EnvelopeAndExceptionsTests(unittest.TestCase):
     def test_successful_envelope_returns_data(self):
-        from mineru.client import _check_envelope
+        from app.mineru.client import _check_envelope
 
         out = _check_envelope(_envelope({"task_id": "abc"}))
         self.assertEqual(out, {"task_id": "abc"})
 
     def test_auth_error_code_raises_auth(self):
-        from mineru.client import _check_envelope
+        from app.mineru.client import _check_envelope
 
         with self.assertRaises(MinerUAuthError):
             _check_envelope(_envelope(None, code="A0202", msg="bad token"))
 
     def test_generic_error_raises_api_error(self):
-        from mineru.client import _check_envelope
+        from app.mineru.client import _check_envelope
 
         with self.assertRaises(MinerUAPIError) as ctx:
             _check_envelope(_envelope(None, code=-500, msg="bad param"))
@@ -112,19 +115,19 @@ class EnvelopeAndExceptionsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.trace_id, "trace-xyz")
 
     def test_load_token_uses_explicit_value(self):
-        from mineru.client import _load_token
+        from app.mineru.client import _load_token
 
         self.assertEqual(_load_token("abc"), "abc")
         self.assertEqual(_load_token("  spaced  "), "spaced")
 
     def test_load_token_falls_back_to_env(self):
-        from mineru.client import _load_token
+        from app.mineru.client import _load_token
 
         with patch.dict(os.environ, {"MINERU_TOKEN": "env-token"}):
             self.assertEqual(_load_token(None), "env-token")
 
     def test_load_token_raises_when_missing(self):
-        from mineru.client import _load_token
+        from app.mineru.client import _load_token
 
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(MinerUAuthError):
@@ -415,7 +418,7 @@ class AgentAPITests(unittest.TestCase):
 class DownloadAndExtractTests(unittest.TestCase):
     def test_download_zip_writes_file(self):
         payload = _make_zip({"a.md": "hi", "b.md": "bye"})
-        with patch("mineru.client.requests.get") as gget:
+        with patch("app.mineru.client.requests.get") as gget:
             r = MagicMock()
             r.__enter__ = MagicMock(return_value=r)
             r.__exit__ = MagicMock(return_value=False)
@@ -439,7 +442,7 @@ class DownloadAndExtractTests(unittest.TestCase):
             self.assertIn("b.md", names)
 
     def test_download_markdown(self):
-        with patch("mineru.client.requests.get") as gget:
+        with patch("app.mineru.client.requests.get") as gget:
             resp = MagicMock()
             resp.text = "# Title\n\nbody"
             resp.raise_for_status = MagicMock()
@@ -482,7 +485,7 @@ class EndToEndTests(unittest.TestCase):
             ),
         ]
 
-        with patch("mineru.client.requests.get") as gget:
+        with patch("app.mineru.client.requests.get") as gget:
             r = MagicMock()
             r.__enter__ = MagicMock(return_value=r)
             r.__exit__ = MagicMock(return_value=False)
@@ -509,14 +512,10 @@ LIVE_URL = "https://cdn-mineru.openxlab.org.cn/demo/example.pdf"
 
 
 @unittest.skipUnless(
-    os.environ.get("MINERU_LIVE") == "1",
-    "set MINERU_LIVE=1 and MINERU_TOKEN=... to run live tests",
+    os.environ.get("MINERU_LIVE") == "1" and os.environ.get("MINERU_TOKEN"),
+    "set MINERU_LIVE=1 and MINERU_TOKEN=... to run precise v4 live tests",
 )
-class LiveMinerUTests(unittest.TestCase):
-    def setUp(self):
-        if not os.environ.get("MINERU_TOKEN"):
-            self.skipTest("MINERU_TOKEN is not set")
-
+class LivePreciseTests(unittest.TestCase):
     def test_precise_pipeline_smoke(self):
         client = MinerUClient()
         with tempfile.TemporaryDirectory() as d:
@@ -530,12 +529,38 @@ class LiveMinerUTests(unittest.TestCase):
             names = [f.name for f in files]
             self.assertTrue(any(n.endswith(".md") for n in names), names)
 
-    def test_agent_api_smoke(self):
-        client = MinerUClient()
+
+@unittest.skipUnless(
+    os.environ.get("MINERU_AGENT_LIVE") == "1",
+    "set MINERU_AGENT_LIVE=1 to run Agent API live tests (no token required)",
+)
+class LiveAgentOnlyTests(unittest.TestCase):
+    """Agent (轻量解析) live tests — no token, just IP rate limiting."""
+
+    def test_agent_submit_and_poll(self):
+        client = MinerUClient(token=None)  # explicit: no token
         task_id = client.agent_submit_url(LIVE_URL, file_name="example.pdf")
-        status = client.agent_wait_for_task(task_id, timeout=180, poll_interval=5)
+        status = client.agent_wait_for_task(
+            task_id, timeout=180, poll_interval=5
+        )
         self.assertTrue(status.is_done, status)
         self.assertTrue(status.markdown_url, status)
+
+    def test_agent_download_markdown(self):
+        import requests as _req
+
+        client = MinerUClient(token=None)
+        task_id = client.agent_submit_url(LIVE_URL, file_name="example.pdf")
+        status = client.agent_wait_for_task(
+            task_id, timeout=180, poll_interval=5
+        )
+        # Confirm the CDN markdown URL is reachable and non-empty
+        with tempfile.TemporaryDirectory() as d:
+            path = MinerUClient.download_markdown(
+                status.markdown_url, Path(d) / "out.md"
+            )
+            self.assertGreater(path.stat().st_size, 0)
+            self.assertIn("#", path.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -547,16 +572,17 @@ class LocalParseRequestTests(unittest.TestCase):
     def test_default_request_form(self):
         req = LocalParseRequest()
         form = req.to_form()
+        as_dict = {k: v for k, v in form}
         # lang_list is a repeated key
-        langs = [v for (k, _), v in form.items() if k == "lang_list"]
+        langs = [v for k, v in form if k == "lang_list"]
         self.assertEqual(langs, ["ch"])
-        self.assertEqual(form[("backend", "")], LOCAL_BACKEND_HYBRID)
-        self.assertEqual(form[("formula_enable", "")], "true")
-        self.assertEqual(form[("return_md", "")], "true")
-        self.assertEqual(form[("response_format_zip", "")], "true")
+        self.assertEqual(as_dict["backend"], "pipeline")
+        self.assertEqual(as_dict["formula_enable"], "true")
+        self.assertEqual(as_dict["return_md"], "true")
+        self.assertEqual(as_dict["response_format_zip"], "true")
         # end_page_id / server_url omitted by default
-        self.assertNotIn(("end_page_id", ""), form)
-        self.assertNotIn(("server_url", ""), form)
+        self.assertNotIn("end_page_id", as_dict)
+        self.assertNotIn("server_url", as_dict)
 
     def test_custom_request_form(self):
         req = LocalParseRequest(
@@ -567,12 +593,11 @@ class LocalParseRequestTests(unittest.TestCase):
             server_url="http://vlm:8000",
         )
         form = req.to_form()
-        self.assertEqual(
-            [v for (k, _), v in form.items() if k == "lang_list"], ["ch", "en"]
-        )
-        self.assertEqual(form[("end_page_id", "")], "10")
-        self.assertEqual(form[("server_url", "")], "http://vlm:8000")
-        self.assertEqual(form[("return_md", "")], "false")
+        self.assertEqual([v for k, v in form if k == "lang_list"], ["ch", "en"])
+        as_dict = {k: v for k, v in form}
+        self.assertEqual(as_dict["end_page_id"], "10")
+        self.assertEqual(as_dict["server_url"], "http://vlm:8000")
+        self.assertEqual(as_dict["return_md"], "false")
 
 
 class LocalClientTests(unittest.TestCase):
@@ -611,19 +636,24 @@ class LocalClientTests(unittest.TestCase):
         self.assertEqual(sub["task_id"], "abc")
         args, kwargs = self._session.post.call_args
         self.assertIn("files", kwargs)
-        # Form fields were attached
+        # Form fields were attached (list of tuples; supports repeated lang_list)
         data = kwargs["data"]
-        self.assertIn(("backend", ""), data)
-        self.assertIn(("return_md", ""), data)
+        as_dict = {k: v for k, v in data}
+        self.assertEqual(as_dict["backend"], "pipeline")
+        self.assertEqual(as_dict["return_md"], "true")
 
     def test_wait_for_task_completes(self):
-        self._session.get.side_effect = [
-            MagicMock(json=MagicMock(return_value={"status": LOCAL_PENDING})),
-            MagicMock(json=MagicMock(return_value={"status": LOCAL_PROCESSING})),
-            MagicMock(json=MagicMock(return_value={"status": LOCAL_COMPLETED})),
+        responses = [
+            {"status": LOCAL_PENDING},
+            {"status": LOCAL_PROCESSING},
+            {"status": LOCAL_COMPLETED},
         ]
-        for m in self._session.get.side_effect:
-            m.raise_for_status = MagicMock()
+        def _fake_get(url, timeout=60):
+            r = MagicMock()
+            r.json.return_value = responses.pop(0)
+            r.raise_for_status = MagicMock()
+            return r
+        self._session.get.side_effect = _fake_get
 
         seen = []
         result = self.client.wait_for_task("abc", poll_interval=0, timeout=5, on_poll=seen.append)
@@ -659,6 +689,10 @@ class LocalClientTests(unittest.TestCase):
             names = {f.name for f in files}
             self.assertIn("out.md", names)
             self.assertIn("meta.json", names)
+        # Form was sent as a list (not dict) so repeated keys like lang_list work
+        data = self._session.post.call_args.kwargs["data"]
+        self.assertIsInstance(data, list)
+        self.assertIn(("lang_list", "ch"), data)
 
 
 @unittest.skipUnless(

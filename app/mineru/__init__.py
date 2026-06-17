@@ -9,7 +9,7 @@ Submodules
 
 Quick start
 -----------
->>> from mineru import MinerUClient
+>>> from app.mineru import MinerUClient
 >>> client = MinerUClient(token="YOUR_TOKEN")
 >>> paths = client.parse_url(
 ...     "https://example.com/paper.pdf",

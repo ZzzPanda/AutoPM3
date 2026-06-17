@@ -1,8 +1,18 @@
+# Make the project root importable when launched via `streamlit run app/main.py`.
+# Streamlit inserts the script's directory (app/) into sys.path[0], which hides
+# the `app` package from absolute imports. Inserting the project root up front
+# lets `from app.core...` resolve correctly without requiring PYTHONPATH.
+import sys
+from pathlib import Path
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import streamlit as st
 import traceback
 
-from AutoPM3_main import query_variant_in_paper_xml
-from streamlit_helpers import (
+from app.core.query import query_variant_in_paper_xml
+from app.core.streamlit_helpers import (
     config_value,
     extract_paper_content,
     render_result,

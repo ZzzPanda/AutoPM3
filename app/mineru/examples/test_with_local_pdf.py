@@ -22,16 +22,16 @@ Three modes are demonstrated:
 Usage::
 
     # Default — just inspect the existing artifacts in data/pdf_convert/
-    python mineru/examples/test_with_local_pdf.py
+    python -m app.mineru.examples.test_with_local_pdf
 
     # Local server (requires mineru-api on :8000)
-    python mineru/examples/test_with_local_pdf.py --local-server
+    python -m app.mineru.examples.test_with_local_pdf --local-server
 
     # Cloud (requires MINERU_TOKEN)
-    MINERU_TOKEN=... python mineru/examples/test_with_local_pdf.py --cloud
+    MINERU_TOKEN=... python -m app.mineru.examples.test_with_local_pdf --cloud
 
     # All three
-    python mineru/examples/test_with_local_pdf.py --all
+    python -m app.mineru.examples.test_with_local_pdf --all
 """
 
 from __future__ import annotations
@@ -47,11 +47,17 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Make the repo root importable so `import app.mineru` works no matter where
+# the script is invoked from.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+REPO_ROOT = _REPO_ROOT
 PDF_PATH = REPO_ROOT / "data" / "pdf_convert" / "PubMed23689641.pdf"
 EXPECTED_MD = REPO_ROOT / "data" / "pdf_convert" / "MinerU_markdown_PubMed23689641_2067159189227929600.md"
 EXPECTED_JSON = REPO_ROOT / "data" / "pdf_convert" / "MinerU_PubMed23689641__20260617081534.json"
-OUTPUT_ROOT = REPO_ROOT / "mineru" / "examples" / "output"
+OUTPUT_ROOT = REPO_ROOT / "app" / "mineru" / "examples" / "output"
 
 
 def step_inspect_existing() -> None:
@@ -81,7 +87,7 @@ def step_inspect_existing() -> None:
 def step_local_server() -> None:
     """Submit the PDF to a locally running ``mineru-api`` server."""
     print(f"\n[2/3] Submitting to local mineru-api server")
-    from mineru import LocalParseRequest, MinerULocalClient
+    from app.mineru import LocalParseRequest, MinerULocalClient
 
     if not PDF_PATH.exists():
         print(f"  ! missing fixture: {PDF_PATH}")
@@ -145,7 +151,7 @@ def serve_pdf_locally(directory: Path):
 def step_cloud() -> None:
     """Submit via the cloud precise API by serving the PDF locally first."""
     print(f"\n[3/3] Submitting to the cloud precise API")
-    from mineru import MinerUClient, MinerUAuthError
+    from app.mineru import MinerUClient, MinerUAuthError
 
     token = os.environ.get("MINERU_TOKEN", "").strip()
     if not token:

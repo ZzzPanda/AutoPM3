@@ -1,6 +1,8 @@
 # AutoPM3: Enhancing Variant Interpretation via LLM-driven PM3 Evidence Extraction from Scientific Literature
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/license/mit/) 
+**English** | [简体中文](./README.zh.md)
+
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/license/mit/)
 [![DOI](https://zenodo.org/badge/872230347.svg)](https://doi.org/10.5281/zenodo.15629003)
 
 
@@ -14,11 +16,53 @@ We introduce AutoPM3, a method for automating the extraction of ACMG/AMP PM3 evi
 
 AutoPM3's manucript describing its algorithms and results were published at [Bioinformatics](https://academic.oup.com/bioinformatics/article/41/7/btaf382/8178584)
 
-![](./images/img1.png)
+![](./docs/images/img1.png)
+---
+
+## Project Layout
+
+> **Note:** This repo's top-level layout was restructured from the original single-folder layout (where source `.py` files, `Dockerfile`, data, and docs all sat side-by-side at the root). Python code now lives under `app/`, runtime data under `data/`, Docker under `docker/`, credentials under `config/`, and the benchmark + internal docs each got their own folder. See [DEPLOY.md](DEPLOY.md) for the full deployment guide.
+
+```
+AutoPM3/
+├── app/                       # All Python source (the installable package)
+│   ├── main.py                # Streamlit entry — DeepSeek page
+│   ├── pages/                 # Other Streamlit pages (e.g. OpenAI-Compatible)
+│   ├── core/                  # Core logic: query engine, table extraction, utils
+│   ├── data_io/               # Offline scripts (e.g. download_papers.py)
+│   └── mineru/                # MinerU API client (PDF → structured text)
+│
+├── data/                      # Runtime data files
+│   ├── protein.txt            # Protein-symbol mapping (loaded by app/core/query.py)
+│   ├── xml_papers/            # Output of `python -m app.data_io.download_papers` (gitignored)
+│   └── pdf_convert/           # MinerU conversion samples
+│
+├── benchmarks/                # PM3-Bench evaluation dataset + tutorial
+│
+├── docs/                      # Internal docs (architecture, dev plans, meeting notes, images)
+│
+├── scripts/build.sh           # Versioned Docker build helper (OCI labels, semver tags)
+│
+├── docker/                    # Dockerfile + docker-compose.yml
+│
+├── config/                    # Credential templates (`.env.example`, `secrets.toml.example`)
+│                             #  — copy to `config/.env` / `.streamlit/secrets.toml` to use
+│
+├── DEPLOY.md                  # How to run locally + Docker + `scripts/build.sh`
+├── requirements.txt
+└── README.md
+```
+
+**Key path conventions** (see [DEPLOY.md §0](DEPLOY.md#0-项目结构速览) for the full list):
+- Run from the **project root** — `streamlit run app/main.py`, `python -m app.core.query`, etc.
+- The real `secrets.toml` lives at **`.streamlit/secrets.toml`** (Streamlit's default lookup path); the template is in `config/.streamlit/secrets.toml.example`.
+- The Docker build context is the **project root** (not `docker/`); `scripts/build.sh` resolves it from the script's own location so it works from any CWD.
+
 ---
 
 ## Contents
 
+- [Project Layout](#project-layout)
 - [Latest Updates](#latest-updates)
 - [Online Demo](#online-demo)
 - [Installations](#installation)
@@ -95,26 +139,26 @@ ollama pull llama3:70B
 
 * Step 1. Launch the local web-server:
 ```bash
-streamlit run lit.py
+streamlit run app/main.py
 ```
 * Step 2. Copy the following `http://localhost:8501` to the brower and start to use.
 
 ### Advanced usage of the python script
 
-* Check the help of AutoPM3_main.py
+* Check the help of `app.core.query`
 ```bash
-python AutoPM3_main.py -h
+python -m app.core.query -h
 ```
 * The example of running python scripts: 
 ```bash
-python AutoPM3_main.py 
+python -m app.core.query
 --query_variant "NM_004004.5:c.516G>C" ## HVGS format query variant
---paper_path ./xml_papers/20201936.xml ## paper path.
+--paper_path ./data/xml_papers/20201936.xml ## paper path.
 --model_name_text llama3_loraFT-8b-f16 ## change to llama3:70b or other hosted models as the backend of RAG as you prefer, noted that you need pull the model in Ollama in advance.
 ```
 
 ## PM3-Bench
-* We released PM3-Bench used in this study, details listed in [PM3-Bench tutorial](PM3-Bench/README.md)
+* We released PM3-Bench used in this study, details listed in [PM3-Bench tutorial](benchmarks/README.md)
 
 ## TODO
 * A fast set up for AutoPM3.
