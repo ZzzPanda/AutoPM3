@@ -13,3 +13,17 @@ __pycache__/
 # IDE
 .DS_Store
 .idea/
+
+# Saved Docker image exports (build.sh --save produces these)
+autopm3-*.tar
+autopm3-*.tar.gz
+
+# Build artefacts
+*.log
+*.tmp
+*.bak
+build/
+dist/
+*.deb
+*.egg
+*.whl

@@ -1,0 +1,94 @@
+# Git
+.git
+.gitignore
+.gitattributes
+.dockerignore
+.github/
+
+# Docker / Compose (build-time, not runtime)
+Dockerfile
+Dockerfile.*
+docker-compose.yml
+docker-compose.*.yml
+.docker/
+
+# Saved image exports — `COPY . .` would otherwise re-bake every .tar
+# into the next image, making it grow across builds.
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
+*.gz
+*.bz2
+*.xz
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Secrets — NEVER bake into the image
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+**/secrets.toml
+**/*.pem
+**/*.key
+xml_papers/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# Streamlit runtime artefacts / data
+xml/
+**/*.pdf
+**/*.bib
+**/*.csv
+**/*.tsv
+**/*.jsonl
+
+# Build helpers (downloader, build scripts, etc.)
+download_papers.py
+scripts/
+
+# Build artefacts
+*.log
+*.log.*
+*.tmp
+*.bak
+*.pid
+*.pidfile
+build/
+dist/
+*.deb
+*.egg
+*.whl
+
+# Local docs / notes
+doc/
+*.md
+LICENSE
+DEPLOY.md
+README.md
+images/
