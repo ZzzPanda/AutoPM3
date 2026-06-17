@@ -147,7 +147,7 @@ if st.button('Example', type='primary'):
     st.session_state.variant_name_xml_openai = 'NM_004004.5:c.71G>A'
 
 variant_name = st.text_input('Step 1. Enter the variant (HGVS notation)', key='variant_name_xml_openai')
-paper_file = st.file_uploader('Step 2. Upload XML or PDF paper', type=['xml', 'pdf'])
+paper_file = st.file_uploader('Step 2. Upload XML paper', type=['xml'])
 
 run_col, test_col = st.columns([1, 1])
 with run_col:
@@ -183,6 +183,6 @@ if run_clicked:
             st.write('An error has occurred.')
             st.code(traceback.format_exc())
     else:
-        st.write('Please enter API URL, model name, API key, variant and upload XML or PDF.')
+        st.write('Please enter API URL, model name, API key, variant and upload XML.')
 if test_clicked:
     render_result(_build_fake_result())

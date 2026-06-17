@@ -67,7 +67,6 @@ mutalyzer_diagnostics = {
 
 import os
 import time
-import uuid
 import asyncio
 import atexit
 from argparse import ArgumentParser
@@ -108,11 +107,9 @@ from func_timeout import func_set_timeout
 # released during network I/O — the event loop is free to schedule other
 # coroutines while a DeepSeek call is in flight.
 _LLM_CONCURRENCY = int(os.getenv("AUTOPM3_LLM_CONCURRENCY", "4"))
-_PDF_WORKERS = int(os.getenv("AUTOPM3_PDF_WORKERS", "2"))
 
 _llm_semaphore: Optional[asyncio.Semaphore] = None
 _llm_thread_pool: Optional[ThreadPoolExecutor] = None
-_pdf_thread_pool: Optional[ThreadPoolExecutor] = None
 _async_runtime_initialised = False
 
 
@@ -131,7 +128,7 @@ def _init_async_runtime() -> None:
     Docker image) or silently leak across loops. Thread pools are
     loop-agnostic and only created once.
     """
-    global _llm_semaphore, _llm_thread_pool, _pdf_thread_pool, _async_runtime_initialised
+    global _llm_semaphore, _llm_thread_pool, _async_runtime_initialised
     try:
         current_loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -150,17 +147,13 @@ def _init_async_runtime() -> None:
         _llm_thread_pool = ThreadPoolExecutor(
             max_workers=_LLM_CONCURRENCY, thread_name_prefix="autopm3-llm"
         )
-    if _pdf_thread_pool is None:
-        _pdf_thread_pool = ThreadPoolExecutor(
-            max_workers=_PDF_WORKERS, thread_name_prefix="autopm3-pdf"
-        )
     _async_runtime_initialised = True
 
 
 @atexit.register
 def _shutdown_async_runtime() -> None:
     """Best-effort pool shutdown at process exit. Errors are swallowed."""
-    for pool in (_llm_thread_pool, _pdf_thread_pool):
+    for pool in (_llm_thread_pool,):
         if pool is None:
             continue
         try:
@@ -645,28 +638,9 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
         print('Paper not found. Abort.')
         sys.exit(-1)
     if paper_fn.lower().endswith(".pdf"):
-        from pdf_conversion import convert_pdf_to_xml
-        from streamlit_helpers import get_session_id, session_paper_dir
-
-        # Land the PDF→XML temp file in the session-scoped scratch dir so it
-        # gets reaped by the TTL sweep at module-load time. Outside Streamlit
-        # (e.g. CLI), ``get_session_id()`` returns "default" and we still get
-        # a per-process isolated dir.
-        pdf_out_dir = session_paper_dir(get_session_id())
-        pdf_out_path = os.path.join(
-            pdf_out_dir, f"pdfconv_{uuid.uuid4().hex[:8]}.xml"
-        )
-        pdf_strategy = os.getenv("AUTOPM3_PDF_STRATEGY", "pdfplumber")
-        # PDF parsing is CPU + I/O heavy; route it through the dedicated
-        # PDF thread pool so it doesn't starve LLM workers. The
-        # ``convert_pdf_to_xml`` call is sync internally, but the executor
-        # call releases the GIL and lets the event loop continue.
-        xml_fn = await _run_blocking(
-            convert_pdf_to_xml, paper_fn, pdf_out_path, strategy=pdf_strategy,
-            pool=_pdf_thread_pool,
-        )
-    else:
-        xml_fn = paper_fn
+        print('PDF uploads are not supported. Please upload an XML paper.')
+        sys.exit(-1)
+    xml_fn = paper_fn
 
     # Load the XML paper and filter away tables and useless sections,
     # then split into chunks
@@ -705,7 +679,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
     table_src_contains_variant = False
     table_query_results = []
 
-    # PDF/XML parsing is sync; run it on the LLM thread pool so the event
+    # XML parsing is sync; run it on the LLM thread pool so the event
     # loop isn't blocked.
     relevant_tables = await _run_blocking(extractTablesFromXML, xml_fn)
     c_variant_id = None
