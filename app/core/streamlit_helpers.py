@@ -158,6 +158,14 @@ def render_result(result: Any) -> None:
     if result.get("title"):
         st.header(result["title"])
     sections = result["sections"]
+    evidence = result.get("evidence") if isinstance(result, dict) else None
+    if evidence:
+        _render_result_with_evidence(
+            sections,
+            evidence,
+            document_markdown=result.get("document_markdown", ""),
+        )
+        return
     for i, section in enumerate(sections):
         if i > 0:
             st.divider()
@@ -169,6 +177,190 @@ def render_result(result: Any) -> None:
         with st.expander(section["title"], expanded=True):
             st.markdown(f"## {section['title']}")
             st.markdown(section["body"])
+
+
+def _render_evidence_preview(evidence_item: dict[str, Any]) -> None:
+    label_bits = [evidence_item.get("title") or evidence_item.get("id", "Evidence")]
+    if evidence_item.get("page"):
+        label_bits.append(f"page {evidence_item['page']}")
+    if evidence_item.get("reason"):
+        label_bits.append(evidence_item["reason"])
+    st.caption(" · ".join(str(bit) for bit in label_bits if bit))
+    st.markdown(
+        f"""
+        <div style="
+            border-left: 4px solid #f97316;
+            background: #fff7ed;
+            padding: 0.75rem 0.9rem;
+            border-radius: 6px;
+            margin: 0.5rem 0 1rem 0;
+            color: #111827;
+            line-height: 1.55;
+            overflow-x: auto;
+        ">{evidence_item.get("text", "")}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_markdown_document_with_highlight(
+    document_markdown: str,
+    selected_item: dict[str, Any],
+) -> None:
+    raw_chunk = selected_item.get("raw_text") or selected_item.get("text") or ""
+    anchor_id = "autopm3-selected-chunk"
+    if raw_chunk and raw_chunk in document_markdown:
+        before, rest = document_markdown.split(raw_chunk, 1)
+        _, after = rest[: len(raw_chunk)], rest[len(raw_chunk):]
+        if before.strip():
+            with st.expander("Content before selected chunk", expanded=False):
+                st.markdown(before, unsafe_allow_html=True)
+        st.markdown(f'<div id="{anchor_id}"></div>', unsafe_allow_html=True)
+        _render_evidence_preview({**selected_item, "text": raw_chunk})
+        if after.strip():
+            st.markdown(after, unsafe_allow_html=True)
+        return
+
+    st.markdown(document_markdown, unsafe_allow_html=True)
+
+
+def _render_result_with_evidence(
+    sections: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    document_markdown: str = "",
+) -> None:
+    ordered_evidence = [
+        item
+        for item in evidence
+        if isinstance(item, dict) and item.get("id")
+    ]
+    evidence_by_id = {item["id"]: item for item in ordered_evidence}
+    if not evidence_by_id:
+        st.info("No linked chunks were returned for this result.")
+        return
+
+    selected_key = "autopm3_selected_evidence_id"
+    if st.session_state.get(selected_key) not in evidence_by_id:
+        st.session_state[selected_key] = ordered_evidence[0]["id"]
+
+    st.markdown(
+        """
+        <style>
+        .autopm3-workbench-note {
+            color: #6b7280;
+            font-size: 0.9rem;
+            margin-top: -0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"] table {
+            border-collapse: collapse;
+            display: block;
+            overflow-x: auto;
+            white-space: nowrap;
+            width: 100%;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"] th,
+        [data-testid="stVerticalBlockBorderWrapper"] td {
+            border: 1px solid #d1d5db;
+            padding: 0.35rem 0.5rem;
+            vertical-align: top;
+        }
+        [data-testid="stVerticalBlockBorderWrapper"] tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        </style>
+        <div class="autopm3-workbench-note">
+        Conclusions on the left are linked to source chunks on the right.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    left, gutter, right = st.columns([0.95, 0.035, 1.05], gap="large")
+
+    with left:
+        st.subheader("Conclusions")
+        for i, section in enumerate(sections):
+            evidence_ids = [
+                evidence_id
+                for evidence_id in section.get("evidence_ids", [])
+                if evidence_id in evidence_by_id
+            ]
+            label = section["title"]
+            if evidence_ids:
+                label = f"{label} · {len(evidence_ids)} chunk(s)"
+            with st.expander(label, expanded=True):
+                st.markdown(f"### {section['title']}")
+                st.markdown(section["body"])
+                if evidence_ids:
+                    st.caption("Linked source chunks")
+                    button_cols = st.columns(min(4, len(evidence_ids)))
+                    for j, evidence_id in enumerate(evidence_ids):
+                        item = evidence_by_id[evidence_id]
+                        chunk_label = item.get("title") or evidence_id
+                        if item.get("page"):
+                            chunk_label = f"{chunk_label} p.{item['page']}"
+                        with button_cols[j % len(button_cols)]:
+                            selected = st.session_state[selected_key] == evidence_id
+                            if st.button(
+                                f"{'Selected: ' if selected else ''}{chunk_label}",
+                                key=f"evidence-link-{i}-{j}-{evidence_id}",
+                                type="primary" if selected else "secondary",
+                                use_container_width=True,
+                                on_click=lambda value=evidence_id: st.session_state.__setitem__(
+                                    selected_key,
+                                    value,
+                                ),
+                            ):
+                                pass
+
+    with gutter:
+        st.markdown(
+            """
+            <div style="
+                min-height: 720px;
+                border-left: 1px solid #d1d5db;
+                margin: 0.25rem auto;
+            "></div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        st.subheader("Markdown Source")
+        option_ids = [item["id"] for item in ordered_evidence]
+        selected_index = option_ids.index(st.session_state[selected_key])
+        selected_id = st.selectbox(
+            "Current chunk",
+            option_ids,
+            index=selected_index,
+            format_func=lambda evidence_id: evidence_by_id[evidence_id].get("title") or evidence_id,
+        )
+        st.session_state[selected_key] = selected_id
+        selected_item = evidence_by_id[selected_id]
+        related_sections = [
+            section["title"]
+            for section in sections
+            if selected_id in section.get("evidence_ids", [])
+        ]
+        if related_sections:
+            st.caption("Linked conclusions: " + " / ".join(related_sections))
+        st.markdown("#### Full Markdown")
+        document_view = st.container(height=760, border=True)
+        with document_view:
+            if document_markdown:
+                _render_markdown_document_with_highlight(document_markdown, selected_item)
+            else:
+                st.info("The full Markdown document is not available for this result.")
+
+        with st.expander("All chunks", expanded=False):
+            for item in ordered_evidence:
+                title = item.get("title") or item["id"]
+                if item.get("page"):
+                    title = f"{title} · page {item['page']}"
+                st.markdown(f"**{title}**")
+                st.caption(item.get("reason", ""))
+                st.write((item.get("text") or "")[:420])
 
 
 def run_async_query(async_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

@@ -15,6 +15,7 @@ from langchain_core.retrievers import BaseRetriever
 
 from app.core.table_functions import table_extraction_with_deepseek
 from app.core.utils import extractTablesFromXML
+from app.prompts import PM3_ANSWER
 
 set_debug(False)
 
@@ -79,6 +80,7 @@ import json
 import re
 import copy
 import httpx
+import pandas as pd
 
 
 os.environ['CURL_CA_BUNDLE'] = ''  # Fix SSL error for Mutalyzer3
@@ -287,8 +289,8 @@ class VariantSpecificRetriever(BaseRetriever):
         if not retrieved_chunks:
             dig_dna = re.findall(r'\d+', var_dna)
             dig_protein = re.findall(r'\d+', var_protein) if var_protein else None
-            dig_dna_matcher = re.compile('\D' + str(dig_dna[0]) + '\D') if dig_dna else None
-            dig_protein_matcher = re.compile('\D' + str(dig_protein[0]) + '\D') if dig_protein else None
+            dig_dna_matcher = re.compile(r'\D' + str(dig_dna[0]) + r'\D') if dig_dna else None
+            dig_protein_matcher = re.compile(r'\D' + str(dig_protein[0]) + r'\D') if dig_protein else None
 
             mutalyzer_diagnostics["position_fallback"]["triggered"] = True
             if dig_dna:
@@ -475,15 +477,46 @@ def load_xml_paper(filename, filter_tables=False):
     return out_doc
 
 
+def load_markdown_paper(filename: str) -> str:
+    """Load Markdown / plain text papers produced by MinerU or similar tools."""
+    with open(filename, "r", encoding="utf-8", errors="replace") as fp:
+        return fp.read()
 
-template_PM3_answer_chain_llama3 = """\
-<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a specialist in biogenetics, answer only based on user's input!<|eot_id|>
-<|start_header_id|>user<|end_header_id|>
-The variant in HGVS format is {question}, don't include this in your answer if condisering compound het variants.
-Given the context: '{context}' and target variant {c_variant}. Answer the question: {proposedQuestion}<|eot_id|>.
-<|start_header_id|>assistant<|end_header_id|>\n
-"""
+
+def extract_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
+    """Extract simple pipe-style Markdown tables into DataFrames.
+
+    This intentionally covers the common MinerU Markdown output shape. More
+    complex HTML tables can be added later without affecting the text path.
+    """
+    tables: list[pd.DataFrame] = []
+    block: list[str] = []
+
+    def flush_block() -> None:
+        nonlocal block
+        if len(block) < 2:
+            block = []
+            return
+        header = [cell.strip() for cell in block[0].strip().strip("|").split("|")]
+        rows: list[list[str]] = []
+        for line in block[1:]:
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if cells and all(re.fullmatch(r":?-{3,}:?", cell or "") for cell in cells):
+                continue
+            if len(cells) == len(header):
+                rows.append(cells)
+        if header and rows:
+            tables.append(pd.DataFrame(rows, columns=header))
+        block = []
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("|") and line.endswith("|") and line.count("|") >= 2:
+            block.append(line)
+        else:
+            flush_block()
+    flush_block()
+    return tables
 
 
 
@@ -499,9 +532,61 @@ def split_docs(documents,chunk_size=1500,chunk_overlap=100):
     
     # Splitting the documents into chunks
     chunks = text_splitter.split_documents(documents=documents)
+    for i, chunk in enumerate(chunks, start=1):
+        chunk.metadata = {
+            **(chunk.metadata or {}),
+            "chunk_index": i,
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+        }
     
     # returning the document chunks
     return chunks
+
+
+def _normalize_chunk_text(text: str, max_chars: int = 1800) -> str:
+    """Compact a chunk for evidence display without changing its content."""
+    text = re.sub(r"\s+", " ", text or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1].rstrip() + "…"
+
+
+def _evidence_id_for_doc(doc: Document) -> str:
+    idx = doc.metadata.get("chunk_index", "unknown") if doc.metadata else "unknown"
+    return f"chunk-{idx}"
+
+
+def _evidence_from_doc(doc: Document, *, reason: str, query_variant: str) -> dict[str, Any]:
+    metadata = doc.metadata or {}
+    return {
+        "id": _evidence_id_for_doc(doc),
+        "kind": "text_chunk",
+        "title": f"Chunk {metadata.get('chunk_index', '?')}",
+        "reason": reason,
+        "query_variant": query_variant,
+        "source": metadata.get("source", "local"),
+        "chunk_index": metadata.get("chunk_index"),
+        "page": metadata.get("page"),
+        "text": _normalize_chunk_text(doc.page_content),
+        "raw_text": doc.page_content,
+    }
+
+
+def _append_unique_evidence(
+    evidence_by_id: dict[str, dict[str, Any]],
+    docs: List[Document],
+    *,
+    reason: str,
+    query_variant: str,
+) -> list[str]:
+    ids: list[str] = []
+    for doc in docs:
+        ev = _evidence_from_doc(doc, reason=reason, query_variant=query_variant)
+        if ev["id"] not in evidence_by_id:
+            evidence_by_id[ev["id"]] = ev
+        ids.append(ev["id"])
+    return ids
 
 
 
@@ -607,7 +692,16 @@ def _build_llm(model_name_text, api_key, api_url):
     return loadTextModel(model_name_text, api_key)
 
 
-async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, model_name_text, api_key=None, api_url=None):
+async def query_variant_in_paper_xml(
+    query_variant,
+    xml_path,
+    model_name_table,
+    model_name_text,
+    api_key=None,
+    api_url=None,
+    include_evidence: bool = False,
+    allow_markdown: bool = False,
+):
     """Async query pipeline. See module docstring for the high-level flow.
 
     Concurrency model:
@@ -644,11 +738,23 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
     if paper_fn.lower().endswith(".pdf"):
         print('PDF uploads are not supported. Please upload an XML paper.')
         sys.exit(-1)
-    xml_fn = paper_fn
+    paper_suffix = Path(paper_fn).suffix.lower()
+    is_markdown_input = paper_suffix in {".md", ".markdown", ".txt"}
+    is_xml_input = paper_suffix == ".xml"
+    if is_markdown_input and not allow_markdown:
+        print('Markdown uploads are only supported by the Markdown Evidence page.')
+        sys.exit(-1)
+    if not (is_xml_input or (allow_markdown and is_markdown_input)):
+        print('Unsupported paper format. Please upload an XML paper.')
+        sys.exit(-1)
 
-    # Load the XML paper and filter away tables and useless sections,
-    # then split into chunks
-    doc_filtered = load_xml_paper(xml_fn, filter_tables=True)
+    # Load the paper and filter away tables for XML. Markdown is already the
+    # display-friendly form we want to chunk and show as linked evidence.
+    doc_filtered = (
+        load_markdown_paper(paper_fn)
+        if is_markdown_input
+        else load_xml_paper(paper_fn, filter_tables=True)
+    )
     doc_wrapper = [Document(page_content=doc_filtered, metadata={'source': 'local'})]
     doc_chunks = split_docs(doc_wrapper)
     # Try our custom retriever
@@ -685,7 +791,10 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
 
     # XML parsing is sync; run it on the LLM thread pool so the event
     # loop isn't blocked.
-    relevant_tables = await _run_blocking(extractTablesFromXML, xml_fn)
+    if is_markdown_input:
+        relevant_tables = extract_tables_from_markdown(doc_filtered)
+    else:
+        relevant_tables = await _run_blocking(extractTablesFromXML, paper_fn)
     c_variant_id = None
     c_max = 0
     c_tmp_digit = re.findall(r"\d+", c_variant)
@@ -740,6 +849,8 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
     text_intrans_list: List[str] = []
     text_src_contains_variant = False
     text_variant_answer = ""
+    text_variant_evidence_ids: list[str] = []
+    text_intrans_evidence_ids: list[str] = []
 
     MAX_RETRIES = 1  # number of retries before giving up
     LLM_TIMEOUT_SECONDS = 300
@@ -749,6 +860,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
     # fine, the work is regex matching and microseconds. The point of
     # doing this BEFORE the gather is to avoid the four parallel LLM
     # coroutines all racing on the retriever's per-instance state.
+    evidence_by_id: dict[str, dict[str, Any]] = {}
     pre_computed: Dict[int, tuple] = {}
     for c_index, current_variant in enumerate(variant_alias):
         variant_retriever.ok = False
@@ -756,17 +868,33 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
             docs = await variant_retriever.ainvoke(variant_hgvs)
         except Exception:
             docs = []
-        pre_computed[c_index] = (current_variant, docs, variant_retriever.ok, variant_retriever.short_protein)
+        evidence_ids = (
+            _append_unique_evidence(
+                evidence_by_id,
+                docs,
+                reason=f"Retriever matched variant alias: {current_variant}",
+                query_variant=query_variant,
+            )
+            if include_evidence
+            else []
+        )
+        pre_computed[c_index] = (
+            current_variant,
+            docs,
+            variant_retriever.ok,
+            variant_retriever.short_protein,
+            evidence_ids,
+        )
 
     # 2x2 fan-out: each (variant, query_type) is its own coroutine, with
     # its own LLM call through the shared semaphore. The retriever
     # itself is replaced with a StaticRetriever over the pre-computed
     # docs so the LLM chain never re-invokes the real retriever and
     # never mutates its state.
-    PM3_answer_prompt = PromptTemplate.from_template(template_PM3_answer_chain_llama3)
+    PM3_answer_prompt = PM3_ANSWER
 
     async def _run_text_query(c_index, query_type):
-        current_variant, docs, ok, protein_short = pre_computed[c_index]
+        current_variant, docs, ok, protein_short, evidence_ids = pre_computed[c_index]
         if not ok:
             return None
         if query_type == VARIANT_QUERY:
@@ -805,6 +933,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
                     "current_variant": current_variant,
                     "cur_answers": response["result"],
                     "source_documents": response["source_documents"],
+                    "evidence_ids": evidence_ids,
                     "protein_short": protein_short,
                 }
             except asyncio.TimeoutError as exc:
@@ -823,6 +952,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
             "current_variant": current_variant,
             "cur_answers": None,
             "source_documents": [],
+            "evidence_ids": evidence_ids,
             "protein_short": protein_short,
             "error": last_exc,
         }
@@ -856,6 +986,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
         current_variant = r["current_variant"]
         cur_answers = r["cur_answers"]
         source_doc = r["source_documents"]
+        evidence_ids = r.get("evidence_ids", [])
         if not cur_answers:
             continue
         text_src_contains_variant = True
@@ -870,6 +1001,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
                     c_variant_inRetrieved = True
             if 'yes' in cur_answers.lower():
                 text_variant_hit = True
+                text_variant_evidence_ids.extend(evidence_ids)
                 if c_index == C_VARIANT:
                     text_variant_answer = "\n- **[DNA match result]**:" + cur_answers
                 else:
@@ -878,6 +1010,7 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
                 text_variant_answer = "\n- **Variant not found in text part!**"
         elif query_type == INTRANS_QUERY:
             if "none" not in cur_answers.lower() or "contain" in cur_answers.lower():
+                text_intrans_evidence_ids.extend(evidence_ids)
                 # Flatten the LLM's free-form answer into individual variant
                 # lines. The model often packs multiple variants into a single
                 # comma-separated sentence (e.g. "*c.269T>C*, *c.512T>A*"),
@@ -891,6 +1024,8 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
                         text_intrans_list.append(stripped)
 
     table_results_plaintext_output = [str(xx).strip("\n") + "\n\n" for xx in table_results_plaintext]
+    text_variant_evidence_ids = list(dict.fromkeys(text_variant_evidence_ids))
+    text_intrans_evidence_ids = list(dict.fromkeys(text_intrans_evidence_ids))
     # Build the structured output consumed by render_result() in the Streamlit
     # pages. Returns a dict with the same three blocks that the old
     # markdown-string version produced, plus a fourth "Mutalyzer & Search
@@ -904,12 +1039,14 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
             {
                 "title": "Query Variant and Relative Intrans-variant / Genotype Found in PaperTables",
                 "body": "".join([str(xx) for xx in table_results_plaintext_output]),
+                **({"evidence_ids": []} if include_evidence else {}),
             },
             {
                 "title": "Query Variant Found in PaperText",
                 "body": (
                     f"- {text_variant_answer if text_variant_hit != '' else 'Variant not found in text part!'}"
                 ),
+                **({"evidence_ids": text_variant_evidence_ids} if include_evidence else {}),
             },
             {
                 "title": "Query Variant's Intrans-variant Found in PaperText",
@@ -926,13 +1063,19 @@ async def query_variant_in_paper_xml(query_variant, xml_path, model_name_table, 
                     if text_variant_answer != "Variant not found in text part!" and text_intrans_list
                     else "None!"
                 ),
+                **({"evidence_ids": text_intrans_evidence_ids} if include_evidence else {}),
             },
             {
                 "title": "Mutalyzer & Search Diagnostics",
                 "body": format_mutalyzer_diagnostics(mutalyzer_diagnostics),
+                **({"evidence_ids": list(evidence_by_id.keys())} if include_evidence else {}),
             },
         ],
     }
+    if include_evidence:
+        results["evidence"] = list(evidence_by_id.values())
+        if is_markdown_input:
+            results["document_markdown"] = doc_filtered
     return results
 
 

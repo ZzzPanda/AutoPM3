@@ -1,0 +1,14 @@
+You are a scientific research assistant. Given this table from a biomedical paper:
+
+--- Table {{ idx + 1 }} ---
+{{ csv_content }}
+---
+
+Question: Look for any variant mentioned in this table related to: {{ query_text }}
+- Extract all rows that contain these variants
+- Identify which column contains the variant information (usually POMGnT1 or similar gene columns)
+- Summarize what the table shows about these variants
+
+If no variants are found, respond with: "No variant match in this table"
+
+Answer:

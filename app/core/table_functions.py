@@ -28,6 +28,8 @@ import json
 import math
 import requests
 from func_timeout import func_set_timeout
+
+from app.prompts import TABLE2TEXT, TABLE_NTEXT_QA, render_table_extraction
 import func_timeout
 
 
@@ -83,7 +85,7 @@ def delete_tables(con, tables):
 def table2text(llm, tableRow, question):
     llm_chain = LLMChain(
     llm=llm,
-    prompt=PromptTemplate.from_template(template_PM3_table2text)
+    prompt=TABLE2TEXT
     )
 
     result = llm_chain.generate([{"tableData":tableRow, "question":question}])
@@ -94,7 +96,7 @@ def table2text(llm, tableRow, question):
 def tableNtext_qa(llm, tableRow, pt, question):
     llm_chain = LLMChain(
     llm=llm,
-    prompt=PromptTemplate.from_template(template_PM3_tableNtext_qa)
+    prompt=TABLE_NTEXT_QA
     )
 
     result = llm_chain.generate([{"tableData":tableRow, "pt":pt, "question":question}])
@@ -114,43 +116,6 @@ def is_number(s):
         pass
 
     return False
-
-
-# for benchmarking only, generate half-sturctured data in plain text from single table_row
-template_PM3_table2text = """
-### System:
-You are reading the structured data given in the Context and try to rephrase it in plain text. In each line, the attribute name(header) is on the left of *:*, then corresponding attribute value is on the right.
-
-### Context:
-{tableData}
-
-### User:
-Each variant/mutation must contain alphabet letters with several digits, don't make up non-existed variants/mutations. 
-Limit your answer under 25 words.
-Stop the answer by the word *END*.
-Please read the above provided structured data in context and just answer the given question in short plain text. Question: {question}'\
-### Response:
-
-"""
-
-
-
-
-template_PM3_tableNtext_qa = """
-### System:
-You are reading the structured data and it's corresponding plain text description given in the Context, try to answer user's question based on these. For structured data, in each line, the attribute name(header) is on the left of *:*, then corresponding attribute value is on the right.
-
-### Context:
-structured data {tableData}
-
-plain text description {pt}
-
-### User:
-Limit your answer under 100 words and don't repeat the context or any info you are given. Please read the above provided structured data and it's corresponding plain text description in context and just answer the given question. Question: {question}'\
-### Response:
-
-"""
-
 
 
 async def table_extraction_with_deepseek(current_paper_tables, query_variant_list, model_name="deepseek-v4-flash", api_key=None, api_url=None):
@@ -203,20 +168,9 @@ async def table_extraction_with_deepseek(current_paper_tables, query_variant_lis
 
     async def _query_one_table(idx, df):
         csv_content = df.to_csv(index=False)
-        prompt = f"""You are a scientific research assistant. Given this table from a biomedical paper:
-
---- Table {idx + 1} ---
-{csv_content}
----
-
-Question: Look for any variant mentioned in this table related to: {query_text}
-- Extract all rows that contain these variants
-- Identify which column contains the variant information (usually POMGnT1 or similar gene columns)
-- Summarize what the table shows about these variants
-
-If no variants are found, respond with: "No variant match in this table"
-
-Answer:"""
+        prompt = render_table_extraction(
+            idx=idx, csv_content=csv_content, query_text=query_text
+        )
 
         # Acquire the global LLM semaphore and call the LLM asynchronously
         # with a bounded timeout. Using ``ainvoke`` (not ``invoke`` in a
