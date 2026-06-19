@@ -1,0 +1,124 @@
+You are a PM3 evidence extraction specialist. Use only the provided AutoPM3
+base findings and source chunks. Do not invent patients, variants, PMIDs,
+segregation, phase, or scoring.
+
+Target variant: {{ query_variant }}
+
+Task:
+Apply this PM3 workflow:
+1. Literature screening: keep target-disease patient evidence and exclude
+   healthy screening, unrelated disease, function-only, and unlocatable variant
+   evidence.
+2. Case-level extraction: extract patient count, phenotype, target variant,
+   second allele, homozygous/compound heterozygous state, trans/cis status, and
+   phase confirmation method when available. First use table-derived findings
+   from the AutoPM3 base findings as high-priority case candidates, because
+   patient/genotype rows are often most explicit there. Also extract cases from
+   narrative text, figure captions, appendices, or supplemental-style Markdown
+   content. Do not restrict included cases to tables.
+3. Deduplication: flag possible duplicate reports using author/team, age/sex,
+   phenotype, family relation, and variant combination clues.
+4. Manual scoring support: summarize independent count and evidence strength.
+
+Critical rules:
+- Put the standardized conclusion first.
+- Every conclusion, included case, excluded case, duplicate note, and scoring
+  statement must cite one or more evidence_ids from the provided chunks.
+- Use only these evidence ids: {% for chunk in evidence_chunks %}{{ chunk.id }}{% if not loop.last %}, {% endif %}{% endfor %}.
+- Preserve the table extraction workflow: when AutoPM3 base findings mention a
+  table-derived case, treat it as a strong candidate and match it back to the
+  most relevant source chunk containing the same patient, row, variant,
+  genotype, or phenotype detail. Cite that chunk. If the table finding cannot
+  be matched to any chunk, keep it as "needs manual review" rather than
+  silently dropping it.
+- For cases outside tables, scan the source chunks for patient labels (Case,
+  Patient, Proband, Family, subject IDs), phenotype descriptions, genotype
+  phrases, homozygous/compound heterozygous language, and parental/family
+  segregation statements.
+- Extract family evidence separately from case evidence. Family evidence should
+  capture parents, siblings, proband relationship, consanguinity, segregation,
+  and whether parental/family testing confirms the target variant and second
+  allele are in trans.
+- A compound heterozygous case is valid PM3 evidence only when the specific
+  trans allele is named. If phase is not confirmed, label it "needs manual
+  review" instead of treating it as confirmed trans evidence.
+- Include only cases where the paper authors connect the genotype to the
+  disease. If the authors are uncertain or suggest another cause, exclude or
+  mark for manual review.
+- If the evidence is insufficient, say so explicitly instead of filling the
+  template with unsupported facts.
+
+Return strict JSON only, no markdown fences:
+{
+  "standardized_conclusion": {
+    "text": "该变异已在[至少]XX名患有[疾病/表型]的个体中被检测到。\\n其中XX名为该变异与一个致病性或可能致病性变异[具体位点]的复合杂合，\\n其中XX名通过[父母/家庭检测/其他方法]确认处于反式位置。\\nXX名个体为该变异纯合。[PMID:xxxxx]",
+    "evidence_ids": ["chunk-1"]
+  },
+  "included_cases": [
+    {
+      "case_id": "Case 1 or patient description",
+      "conclusion": "Short conclusion for this case",
+      "source_type": "table / narrative text / appendix / supplemental / mixed / unknown",
+      "family_or_relationship": "family ID, proband/sibling/parent relation, consanguinity, or not stated",
+      "disease_or_phenotype": "Disease/phenotype if stated",
+      "target_variant": "{{ query_variant }} or paper notation",
+      "second_allele": "second allele or unknown",
+      "zygosity_or_phase": "homozygous / compound heterozygous / trans confirmed / phase unknown",
+      "phase_confirmation": "parents/family testing/segregation/other/not stated",
+      "segregation_or_parental_testing": "father/mother/sibling/proband testing details or not stated",
+      "pm3_relevance": "countable / needs manual review / not countable",
+      "evidence_ids": ["chunk-1"]
+    }
+  ],
+  "family_evidence": [
+    {
+      "family_id": "family/proband/case identifier or not stated",
+      "conclusion": "Short conclusion about family/segregation evidence",
+      "proband_or_case": "linked case/proband ID or not stated",
+      "parents_tested": "yes/no/not stated",
+      "parental_genotypes": "father/mother genotype details or not stated",
+      "siblings_or_relatives": "affected/unaffected relatives and genotypes or not stated",
+      "phase_or_trans_support": "confirmed trans / supports trans / phase unknown / not applicable",
+      "segregation_relevance": "supports PM3 / needs manual review / not useful",
+      "evidence_ids": ["chunk-1"]
+    }
+  ],
+  "excluded_cases": [
+    {
+      "case_id": "Case or source description",
+      "conclusion": "What was found",
+      "exclusion_reason": "Why it should not be counted",
+      "evidence_ids": ["chunk-1"]
+    }
+  ],
+  "deduplication_notes": [
+    {
+      "conclusion": "Duplicate/independence assessment",
+      "status": "independent / possible duplicate / needs manual review",
+      "evidence_ids": ["chunk-1"]
+    }
+  ],
+  "scoring_summary": {
+    "conclusion": "Manual PM3 scoring basis and recommended evidence level if supported",
+    "included_case_count": "number or unknown",
+    "pm3_level": "Not met / Supporting / Moderate / Strong / needs manual review",
+    "evidence_ids": ["chunk-1"]
+  }
+}
+
+AutoPM3 base findings:
+{% for section in base_sections %}
+## {{ section.title }}
+Evidence ids already linked by retriever: {{ section.evidence_ids | default([]) }}
+{{ section.body }}
+
+{% endfor %}
+
+Source chunks:
+{% for chunk in evidence_chunks %}
+### {{ chunk.id }}{% if chunk.title %} - {{ chunk.title }}{% endif %}
+Reason: {{ chunk.reason | default("") }}
+Text:
+{{ chunk.text }}
+
+{% endfor %}

@@ -1,0 +1,404 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <!-- 文献基础元数据 -->
+  <metadata>
+    <journal>Mol Genet Genomics</journal>
+    <year>2013</year>
+    <volume>288</volume>
+    <pages>297–308</pages>
+    <DOI>10.1007/s00438-013-0749-5</DOI>
+    <paper_type>ORIGINAL PAPER</paper_type>
+    <title>Novel POMGnT1 mutations cause muscle-eye-brain disease in Chinese patients</title>
+    <authors>
+      <author>Hui Jiao</author>
+      <author>Hiroshi Manya</author>
+      <author>Shuo Wang</author>
+      <author>Yanzhi Zhang</author>
+      <author>Xiaoqing Li</author>
+      <author>Jiangxi Xiao</author>
+      <author>Yanling Yang</author>
+      <author>Kazuhiro Kobayashi</author>
+      <author>Tatsushi Toda</author>
+      <author>Tamao Endo</author>
+      <author>Xiru Wu</author>
+      <author>Hui Xiong</author>
+    </authors>
+    <received_date>23 December 2012</received_date>
+    <accepted_date>30 April 2013</accepted_date>
+    <online_publish_date>21 May 2013</online_publish_date>
+    <publisher>Springer-Verlag Berlin Heidelberg 2013</publisher>
+    <communicated_by>S. Hohmann</communicated_by>
+  </metadata>
+
+  <!-- 摘要 -->
+  <abstract>
+    Muscle-eye-brain (MEB) disease is a congenital muscular dystrophy (CMD) phenotype characterized by hypotonia at birth, brain structural abnormalities and ocular malformations. To date, few MEB cases have been reported in China where clinical recognition and genetic confirmatory testing on a research basis are recent developments. Here, we report the clinical and molecular genetics of three MEB disease patients. The patients had different degrees of muscle, eye and brain symptoms, ranging from congenital hypotonia, early-onset severe myopia and mental retardation to mild weakness, independent walking and language problems. This confirmed the expanding phenotypic spectrum of MEB disease with varying degrees of hypotonia, myopia and cognitive impairment. Brain magnetic resonance imaging showed cerebellar cysts, hypoplasia and characteristic brainstem flattening and kinking. Four candidate genes (POMGnT1, FKRP, FKTN and POMT2) were screened, and six POMGnT1 mutations (four novel) were identified, including five missense and one splice site mutation. Pathogenicity of the two novel variants in one patient was confirmed by POMGnT1 enzyme activity assay, protein expression and subcellular localization of mutant POMGnT1 in HeLa cells. Transfected cells harboring this patient’s L440R mutant POMGnT1 showed POMGnT1 mislocalization to both the Golgi apparatus and endoplasmic reticulum. We have provided clinical, histological, enzymatic and genetic evidence of POMGnT1 involvement in three unrelated MEB disease patients in China. The identification of novel POMGnT1 mutations and an expanded phenotypic spectrum contributes to an improved understanding of POMGnT1 structure–function relationships, CMD pathophysiology and genotype–phenotype correlations, while underscoring the need to consider POMGnT1 in Chinese MEB disease patients.
+  </abstract>
+
+  <!-- 关键词 -->
+  <keywords>
+    <keyword>Muscle-eye-brain disease</keyword>
+    <keyword>POMGnT1 mutation</keyword>
+    <keyword>&amp;alpha;-dystroglycanopathy</keyword>
+    <keyword>Enzyme activity</keyword>
+  </keywords>
+
+  <!-- 缩写对照表 -->
+  <abbreviations>
+    <abbrev>
+      <short>CK</short>
+      <full>Creatine kinase</full>
+    </abbrev>
+    <abbrev>
+      <short>CMD</short>
+      <full>Congenital muscular dystrophy</full>
+    </abbrev>
+    <abbrev>
+      <short>DMEM</short>
+      <full>Dulbecco modified Eagle medium</full>
+    </abbrev>
+    <abbrev>
+      <short>EMG</short>
+      <full>Electromyogram</full>
+    </abbrev>
+    <abbrev>
+      <short>ER</short>
+      <full>Endoplasmic reticulum</full>
+    </abbrev>
+    <abbrev>
+      <short>FKRP</short>
+      <full>Fukutin-related protein</full>
+    </abbrev>
+    <abbrev>
+      <short>FKTN</short>
+      <full>Fukutin</full>
+    </abbrev>
+    <abbrev>
+      <short>GlcNAc</short>
+      <full>N-acetylglucosamine</full>
+    </abbrev>
+    <abbrev>
+      <short>HRP</short>
+      <full>Horseradish peroxidase</full>
+    </abbrev>
+    <abbrev>
+      <short>KLH</short>
+      <full>Keyhole limpet hemocyanin</full>
+    </abbrev>
+    <abbrev>
+      <short>MEB disease</short>
+      <full>Muscle-eye-brain disease</full>
+    </abbrev>
+    <abbrev>
+      <short>MRI</short>
+      <full>Magnetic resonance imaging</full>
+    </abbrev>
+    <abbrev>
+      <short>PCR</short>
+      <full>Polymerase chain reaction</full>
+    </abbrev>
+    <abbrev>
+      <short>POMGnT1</short>
+      <full>Protein-O-linked mannose beta1,2-N-acetylglucosaminyltransferase 1</full>
+    </abbrev>
+    <abbrev>
+      <short>POMT</short>
+      <full>Protein-O-mannosyl transferase</full>
+    </abbrev>
+    <abbrev>
+      <short>RT</short>
+      <full>Reverse transcription</full>
+    </abbrev>
+    <abbrev>
+      <short>UTR</short>
+      <full>Untranslated region</full>
+    </abbrev>
+  </abbreviations>
+
+  <!-- 作者单位 -->
+  <affiliations>
+    <affiliation id="A1">
+      <content>Department of Pediatrics, Peking University First Hospital, Beijing 100034, China</content>
+      <corresponding_author_email>xh_bjbj@163.com</corresponding_author_email>
+    </affiliation>
+    <affiliation id="A2">
+      <content>Molecular Glycobiology, Research Team for Mechanism of Aging, Tokyo Metropolitan Geriatric Hospital and Institute of Gerontology, Tokyo 173-0015, Japan</content>
+    </affiliation>
+    <affiliation id="A3">
+      <content>Department of Child Ophthalmology, Peking University First Hospital, Beijing 100034, China</content>
+    </affiliation>
+    <affiliation id="A4">
+      <content>Department of Radiology, Peking University First Hospital, Beijing 100034, China</content>
+    </affiliation>
+    <affiliation id="A5">
+      <content>Division of Neurology/Molecular Brain Science, Kobe University Graduate School of Medicine, Kobe 650-0017, Japan</content>
+    </affiliation>
+    <author_affil_map>
+      <author name="Hui Jiao" affil="A1"/>
+      <author name="Shuo Wang" affil="A1"/>
+      <author name="Yanzhi Zhang" affil="A1"/>
+      <author name="Yanling Yang" affil="A1"/>
+      <author name="Xiru Wu" affil="A1"/>
+      <author name="Hui Xiong" affil="A1"/>
+      <author name="Hiroshi Manya" affil="A2"/>
+      <author name="Tamao Endo" affil="A2"/>
+      <author name="Xiaoqing Li" affil="A3"/>
+      <author name="Jiangxi Xiao" affil="A4"/>
+      <author name="Kazuhiro Kobayashi" affil="A5"/>
+      <author name="Tatsushi Toda" affil="A5"/>
+    </author_affil_map>
+  </affiliations>
+
+  <!-- 正文主体内容 -->
+  <main_content>
+    <section id="Intro">
+      <title>Introduction</title>
+      <content>
+Muscle-eye-brain (MEB) disease (OMIM 253280), a congenital muscular dystrophy (CMD) phenotype, typically presents with profound hypotonia at birth, motor and cognitive developmental delay and ocular abnormalities (Muntoni and Voit 2004; Demir et al. 2009; Hehr et al. 2007). Muscle biopsy examination shows dystrophy, and immunohistochemical analysis demonstrates reduced or absent glycosylation of &amp;alpha;-dystroglycan, i.e., a dystroglycanopathy. Brain magnetic resonance imaging (MRI) may show cobblestone lissencephaly (lissencephaly type II) and hydrocephalus associated with a flat and kinking brainstem, cerebellar hypoplasia and cysts. Mutations in the protein O-linked mannose beta 1,2-N-acetylglucosaminyltransferase 1 (POMGnT1) gene, which encodes one of the glycosyltranferases instrumental in protein O-mannosylation, were first linked to the MEB clinical syndrome. So far, defects in a total of 8 putative and demonstrated glycosyltransferases or accessory proteins of glycosyltransferases have been shown to cause a dystroglycanopathy phenotype. The following genes are involved in the O-mannosyl-linked glycosylation of &amp;alpha;-dystroglycan: protein-O-mannosyl transferase 1 (POMT1), protein-O-mannosyl transferase 2 (POMT2), POMGnT1, fukutin (FKTN), fukutin-related protein (FKRP) and Like-glycosyltransferase (LARGE). Recent reports highlight an expanded POMGnT1 spectrum from early-onset, congenital hypotonia with severe myopia and mental retardation to presentations with cognitive impairment and autistic-like features where ambulation is achieved (Biancheri et al. 2006; Hehr et al. 2007). Not only has the POMGnT1 gene been linked to other CMD phenotypes, including walker warburg syndrome (OMIM 236670) and Fukuyama CMD (OMIM 253800), but also other glycosyltransferases such as POMT1 and FKRP have been associated with an MEB phenotype (Mercuri et al. 2009; Godfrey et al. 2007, 2011).
+<br/><br/>
+Although MEB disease has been reported worldwide, to date, few cases of MEB disease have been described in China. Here, we report the cases of three Chinese patients with variable MEB disease features and an expanded clinical spectrum: one patient had brain and ocular abnormalities, while the other two patients had a relatively milder phenotype with no eye involvement, achievement of ambulation and a limb girdle distribution of weakness. Six POMGnT1 mutations, including four novel mutations, were identified. Each of the patients was compound heterozygous for the POMGnT1 mutations. We had previously reported the case of the patient with two novel mutations (Jiao et al. 2011); however, here we further performed a POMGnT1 enzymatic assay to confirm variant pathogenicity and evaluated the cellular localization of wild-type and L440R (mutant) POMGnT1s. Genetic confirmation in this patient enabled subsequent family counseling and prenatal testing.
+      </content>
+    </section>
+
+    <section id="Methods">
+      <title>Materials and methods</title>
+      <subsection id="Sub1">
+        <title>Patients</title>
+        <content>
+The clinical and neuroradiologic findings of the three patients are summarized in Table 1. Parental informed consent was obtained, and diagnostic testing, including tests on blood samples collected from the patients and their parents, was carried out under a research protocol approved by the ethics committee of Peking University First Hospital. DNA samples from 50 subjects without any known muscle disease were used as control samples. A muscle biopsy was obtained for diagnostic purposes from Case 2 and processed according to standard histological and immunohistochemical techniques.
+        </content>
+      </subsection>
+      <subsection id="Sub2">
+        <title>Polymerase chain reaction and sequence analysis</title>
+        <content>
+On the basis of the clinical features and elevated serum creatine kinase (CK) levels, we selected four candidate genes for analysis: FKTN, POMGnT1, FKRP and POMT2. Genomic DNA was extracted from the peripheral blood for polymerase chain reaction (PCR) amplification. We initially performed a three-primer PCR to analyze the FKTN gene (Xiong et al. 2009). Since negative results were obtained, primers were designed from the FKTN (NM_006731.1), POMGnT1 (NM_017739.1), FKRP (NM_001039885.2) and POMT2 (NM_013382.3) genomic sequences to amplify each exon and the surrounding intronic sequences (primer sequences and PCR conditions available upon request). The PCR products were purified and directly sequenced using an automatic sequencer (ABI PRISM 3730 XL; Applied Biosystems, Foster City, CA, USA), with sequences being analyzed using the computational Sequencing Analysis v5.2.0 (Applied Biosystems) software.
+        </content>
+      </subsection>
+      <subsection id="Sub3">
+        <title>Antibodies</title>
+        <content>
+Anti-V5 monoclonal antibody and anti-FLAG monoclonal antibody from mice were purchased from Beijing CoWin Biotech (Beijing, China). Anti-mouse or anti-rabbit IgG conjugated with horseradish peroxidase (HRP) was purchased from GE Healthcare (Buckinghamshire, UK). Rabbit antiserum specific to human POMGnT1 was produced using a synthetic peptide corresponding to POMGnT1 residues 281–295 (CKDPTPIEFSPDPLP). Immunohistochemical staining was performed with primary antibodies against dystrophin (dystrophin-N and C terminus; Novocastra, Newcastle, UK), &amp;alpha;-dystroglycan (IIH6C4; Upstate Biotechnology, Lake Placid, NY, USA), &amp;beta;-dystroglycan (Novocastra) and laminin a2 (80 kDa C-terminal; Chemicon, Temecula, CA, USA). Keyhole limpet hemocyanin (KLH) was conjugated to the N-terminal cysteine residue of the synthetic peptide corresponding to POMGnT1. Rabbits were immunized with the antigenic peptide-KLH conjugate. Antisera were affinity-purified using a synthetic peptide-coupled Sepharose 4B.
+        </content>
+      </subsection>
+      <subsection id="Sub4">
+        <title>Cell culture, transfection and POMGnT1 enzymatic assay</title>
+        <content>
+HeLa and HEK293 cells were cultured in Dulbecco modified Eagle medium (DMEM) supplemented with 10 % fetal bovine serum and 1 % penicillin and streptomycin in 5 % CO₂ at 37°C. Transfection of Hela cells was carried out using Turbofect in vitro transfection reagent (Fermentas, CA, USA). Transfection of HEK293 cells was carried out using Lipofectamine Plus reagent (Life Technologies). Transfected cells were grown at 37°C and harvested 48 h after transfection. Dermal fibroblasts from skin biopsies obtained from Case 1 and his parents were cultured in DMEM containing 20 % fetal bovine serum and 1 % penicillin and streptomycin in 5 % CO₂ at 37°C. We assayed POMGnT1 activity in Case 1 fibroblasts twice, first in cultured dermal fibroblasts from the proband and his parents and second in wild and mutant HEK293 transfectant cells. All the assays were performed as previously described (Manya et al. 2008).
+        </content>
+      </subsection>
+      <subsection id="Sub5">
+        <title>Molecular constructs and site-directed mutagenesis</title>
+        <content>
+Expression vectors were constructed by cloning human POMGnT1 and FKTN into pEF1/V5-HisA and pCDNA/FLAG (Life Technologies, Carlsbad, CA, USA). Utilizing a standard PCR-based in vitro mutagenesis (Fast Mutagenesis System kit; Trans, Beijing, China), the wild-type POMGnT1 was altered to express the mutant p.L440R mutation (Case 1). The mutant L440R full-length construct was confirmed by direct DNA sequencing. Cellular localization was confirmed using pECFP-Golgi vector and pDsRed2-ER vector (Clontech, Mountain View, CA, USA) to label the Golgi apparatus and endoplasmic reticulum (ER), respectively.
+        </content>
+      </subsection>
+      <subsection id="Sub6">
+        <title>RNA extraction and mutation analysis by reverse transcription-PCR</title>
+        <content>
+Total RNA from the cultured dermal fibroblast cells from Case 1 was purified using Trizol reagent (Invitrogen, USA) and treated with Turbo DNA-free kit (Ambion, USA) to remove genomic DNA contamination. Reverse transcription (RT) was performed using 100 ng of total RNA and Moloney murine leukemia virus reverse transcriptase (Invitrogen), according to the manufacturer’s instructions. The resulting cDNA was then amplified using a set of primer pairs designed to reveal the splicing mutation (c.1896-1 G&gt;C). The PCR conditions were 10 min at 94°C; 35 cycles of 94°C for 30 s, 58°C for 30 s and 72°C for 50 s; followed by a final extension of 72°C for 5 min.
+        </content>
+      </subsection>
+      <subsection id="Sub7">
+        <title>Immunofluorescence analysis</title>
+        <content>
+The subcellular localization of the wild-type and mutant (p.L440R) POMGnT1 (Case 1) was examined in HeLa cells. Cells were transfected with expression constructs encoding wild POMGnT1–V5 or mutant POMGnT1-V5 and pECFP-Golgi and pDsRed2-ER vectors, and then immunostained with anti-V5 antibodies. Fukutin and wildtype POMGnT1 as well as mutant POMGnT1 were cotransfected to examine subcellular localization. Transfected cells were fixed with 4 % paraformaldehyde and permeabilized with 0.2 % Triton X-100. After being blocked with 5 % goat serum for 1 h at room temperature, the cells were incubated overnight with primary antibodies at 4°C. After the final wash, the cells were observed using laser confocal microscopy.
+        </content>
+      </subsection>
+      <subsection id="Sub8">
+        <title>Western blot</title>
+        <content>
+Transfected cells were homogenized in 10 mM Tris–HCl (pH 7.4), 1 mM ethylenediaminetetraacetic acid, 250 mM sucrose, 1 mM dithiothreitol, with protease inhibitor mixture (3 mg/ml pepstatin A, 1 mg/ml leupeptin, 1 mM benzamidine-HCl, 1 mM phenylmethylsulfonyl fluoride). After centrifugation at 900 × g for 10 min, the supernatant was subjected to ultracentrifugation at 100,000 × g for 1 h. The precipitate was used as the microsomal fraction. Protein concentration was determined by the BCA assay (Thermo Fisher Scientific Inc., Waltham, MA, USA). The microsomal fractions (20 μg) were separated by sodium dodecyl sulfate polyacrylamide gel electrophoresis (7.5 % gel), and the proteins were transferred to a polyvinylidene fluoride membrane. The membrane was blocked in phosphate-buffered saline containing 5 % skim milk and 0.05 % Tween 20, incubated with anti-POMGnT1 antibody and treated with anti-rabbit IgG conjugated with HRP. Proteins that were bound to the antibody were visualized with an electrochemiluminescence kit (GE Healthcare).
+        </content>
+      </subsection>
+      <subsection id="Sub9">
+        <title>Prenatal diagnosis</title>
+        <content>
+Prenatal diagnosis was carried out in Case 1 mother during a subsequent pregnancy at a gestational age of 18 weeks. A 20 ml amniotic fluid sample was collected by amniocentesis under ultrasound guidance and divided into two parts; one part (12 ml) was used to extract DNA from the fetal free cells, and the rest (8 ml) was placed in culture. Before DNA sequencing, maternal cell contamination was excluded by PCR linkage analysis of polymorphic microsatellite markers. Three DNA markers linked to the X chromosome (AR, DXS6797 and DXS6807) were used for linkage analysis (Zhang et al. 2008). Fetal sex was determined by karyotype analysis and PCR amplification of the DNA extracted from the cultured amniocytes. The result of the fetal mutation analysis was confirmed by PCR amplification of the DNA extracted from the cultured amniocytes.
+        </content>
+      </subsection>
+    </section>
+
+    <section id="Results">
+      <title>Results</title>
+      <content>
+The clinical phenotype and muscle biopsy findings for the three patients are summarized in Table 1, and demonstrate onset within the 1 year of life with a broad developmental spectrum.
+<br/><br/>
+Case 1 is a boy aged 3 years and 8 months, who displayed significant motor and cognitive developmental delay with mental retardation. He is the third child and was born prematurely at 36 weeks through a natural childbirth to a healthy woman. There was no family history of consanguinity or neuromuscular disease. He had significant feeding difficulties and low cry. He had not achieved head control or the ability to sit unsupported. He developed knee and ankle joint contractures and pectus carinatum within the 1 year of life. He could not speak nor communicate with others. On physical examination, he showed a myopathic face, a high arched palate and demonstrated slip through with generalized muscle weakness and marked hypotonia, including head lag. The calf and deltoid muscles were hypertrophied. Deep tendon reflexes were absent. Ophthalmic examination demonstrated severe myopia, strabismus, and retinal and choroidal pigment epithelium atrophy, as well as optic nerve atrophy. The serum CK level was 3,983 IU/l (24–195 IU/l) when he was 10 months old. An electromyogram revealed a myopathic pattern, while an electrocardiogram was normal. Brain MRI showed sporadic periventricular hyperintense areas in the white matter on T2-weighted sequences, frontal lobe micropolygyria, cerebellar cysts, and cerebellar and brain stem hypoplasia with a characteristic flattening and kinking of the pons. The karyotypic analysis was 46, XY. Blood and urine metabolism screens were normal. Electroencephalography showed frontal and central, frequent, single, moderate-to-high, irregular, sharp and slow wave discharges.
+<br/><br/>
+Case 2, a 6-year-old girl with motor and cognitive delay starting at 1 year of age, presented with a milder MEB phenotype than that of Case 1. She was the second child, born at full-term to a healthy woman. Her parents were non-consanguineous Kazaks from Xinjiang Province. She could stand at age 1 year and walk independently at age 1 and a half year; she showed persistent muscle weakness and hypotonia on clinical examination at age 6 years. She had no obvious joint contractures, no ocular malformations or muscle hypertrophy or atrophy. Her serum CK level was 2,142 IU/l. Brain MRI showed brain stem and cerebellar hypoplasia and cerebellar cysts. She had a low IQ and could speak only a few words. An older brother had not been formally diagnosed but exhibited a similar clinical course and symptoms. Skeletal muscle sections from Case 2 displayed the characteristic morphological features of muscular dystrophy, including variation in fiber diameter, necrosis and regeneration, and increased endomysial fibrosis. Immunohistochemical analysis demonstrated a reduction in 2H6 staining of &amp;alpha;-dystroglycan with normal immunoreactivity of &amp;beta;-dystroglycan, laminin a2 and dystrophin.
+<br/><br/>
+Case 3 was a 2 year-old boy with motor and cognitive delay since birth. He was the first child, born at full-term to healthy, non-consanguineous parents. He exhibited muscle weakness and hypotonia, yet achieved head control at 6 months of age and the ability to sit at 1 year of age. He could walk at age 2 years and had a vocabulary limited to a few words. The serum CK level was mildly increased to 420 IU/l, and brain MRI showed severe abnormalities of the white matter, brain stem and cerebellum compared with Case 2.
+<br/><br/>
+<strong>Mutation analysis</strong>
+<br/>
+First, we used a modified, rapid PCR-based diagnostic method to indirectly check for the Japanese founder mutation, a 3 kb retrotransposal insertion in the FKTN gene, which was negative in all three patients. We then screened all exons and flanking untranslated regions (UTRs) of the FKTN, POMGnT1, FKRP and POMT2 genes, and found several single nucleotide polymorphisms and synonymous mutations in FKRP, FKTN and POMT2. Six variants, including four novel ones, were identified in the POMGnT1 gene in our patient cohort, with each patient being a compound heterozygote. The clinical phenotype, including the characteristic brain MRI changes, parental segregation and negative screening for the variants in 100 chromosomes from control samples confirmed variant pathogenicity (Table 1). Missense changes were situated in highly conserved regions. Two of the six mutations, c.1814 and c.1325 in Cases 2 and 3, respectively, had been previously reported; however, we describe different amino acid changes in Case 3. Case 1 showed two variants that had not been previously described (except by us in a Chinese journal, but we had not previously confirmed the pathogenicity of these variants), with a paternally inherited intronic nucleotide change (G&gt;C) at position c.1896-1 at the junction between intron 21 and exon 22. To evaluate the c.1896-1G&gt;C mutation and confirm its pathogenicity, we examined the changes in the proband’s dermal fibroblast cDNA levels via RT-PCR and verified a 2 bp deletion (c.1896–1897delAG) resulting from a novel splice acceptor site in exon 22 and leading to a frame-shift starting with codon 633 and a new termination codon in the 30UTR located 26 missense codons beyond the natural termination codon (p.V633EfsX53).
+<br/><br/>
+<strong>Assay for POMGnT1 enzymatic activity and western blot analysis</strong>
+<br/>
+POMGnT1 enzymatic activity was measured in the fibroblasts obtained from Case 1 and his parents. The enzymatic activity was significantly lower in Case 1 than in his parents and the controls. To confirm the pathogenicity of the novel missense mutation (c.1319T&gt;G, p.L440R), we measured POMGnT1 activity in HEK293 cells transfected with the mutated POMGnT1 gene. Mutated transfected cells demonstrated a significant decrement in enzymatic activity compared with wild-type cells, indicating that the missense mutation p.L440R leads to a loss of function. To identify whether loss of enzymatic activity was due to a difference in protein expression levels, we compared the POMGnT1 protein expression between cells transfected with wild-type POMGnT1 and those transfected with mutant POMGnT1. The molecular weight and expression quantity were the same in both types of transfected cells, suggesting that loss of enzymatic activity induced by the p.L440R mutation may not be due to a difference in protein expression levels.
+<br/><br/>
+<strong>Immunofluorescence staining</strong>
+<br/>
+Next, we examined the effect of the missense mutation c.1319T&gt;G, p.L440R on the subcellular localization of mutant POMGnT1. The mutant POMGnT1 co-localized with a Golgi marker similar to the wild-type enzyme, indicating normal localization of mutant POMGnT1 in the Golgi apparatus. However, the mutant POMGnT1 also co-localized with an ER marker, which was not seen in the case of the wild-type POMGnT1. We then examined the effect of fukutin co-expression on the subcellular localization of mutant POMGnT1. Fukutin colocalized with wild-type POMGnT1 in the Golgi apparatus, but not with mutant POMGnT1, suggesting that co-transfection of wild-type fukutin with mutant POMGnT1 does not change the mislocalization of the mutant POMGnT1 to the ER.
+<br/><br/>
+<strong>Prenatal diagnosis</strong>
+<br/>
+All three DNA X chromosome markers (AR, DXS6797 and DXS6807) were informative in the family of Case 1, with linkage analysis showing no maternal cell contamination in the amniocytes. We detected a carrier male fetus carrying only the paternal splice site mutation (c.1896-1, G&gt;C) without inheriting the maternal missense mutation. The boy was born uneventfully with no clinical MEB symptoms upon evaluation at 9 months of age.
+      </content>
+    </section>
+
+    <section id="Discussion">
+      <title>Discussion</title>
+      <content>
+MEB was first described in Finland in 1989 (Diesen et al. 2004) and linked to mutations in the POMGnT1 gene in 2001 (Yoshida et al. 2001). The POMGnT1 protein catalyzes the transfer of an N-acetylglucosamine (GlcNAc) residue to the O-mannose of glycoproteins, including dystroglycan, a critical component of the dystrophin-glycoprotein complex in the muscle sarcolemmal membrane (Diesen et al. 2004; Hewitt 2009; Biancheri et al. 2006). POMGnT1 is a typical type II membrane protein and has been demonstrated to localize to the Golgi apparatus (Xiong et al. 2006). Mutations in POMGnT1 lead to a clinical spectrum with syndromic phenotypes, including early-onset, severe Walker Warburg syndrome, MEB disease and Fukuyama CMD. No obvious mutational hotspots have been observed in POMGnT1 (Biancheri et al. 2006), but a founder mutation (c. 1539+1, G&gt;A) was found in Finland and may account for almost 99 % of Finnish MEB cases (Diesen et al. 2004). Recent reports (Biancheri et al. 2006; Hehr et al. 2007) highlight an even broader clinical spectrum for both POMGnT1 mutations and the classic MEB presentation with the identification of patients with milder disease and a more classic CMD with mental retardation phenotype.
+<br/><br/>
+In the present report, we describe three Chinese MEB disease patients with variable serum CK levels and ocular, motor and cognitive involvement. The patients exhibited compound heterozygosity for four novel POMGnT1 mutations, including three missense and one frame-shift mutations. In Case 2, a deficiency of &amp;alpha;-dystroglycan was demonstrated on muscle biopsy. All three patients showed typical brain MRI findings of &amp;alpha;-dystroglycan muscular dystrophy (&amp;alpha;-DG-MD) characterized by cerebellar and/or brain stem involvement and polymicrogyria indicative of an underlying neuronal migration disorder. The variable clinical phenotype and consistent MRI findings underscore brain MRI as an important diagnostic tool for MEB disease and &amp;alpha;-DG-MD.
+<br/><br/>
+Case 1 was clinically diagnosed with CMD based on the findings of neonatal hypotonia, severe muscle weakness, joint contractures, high serum CK levels and electromyographic abnormalities. In addition, Case 1 showed severe ocular and brain abnormalities, including severe myopia, retinal and optic nerve atrophy, anterior predominance of neuronal migrational abnormality, cerebellar cysts, and cerebellar and brain stem hypoplasia, all of which are consistent with a diagnosis of an &amp;alpha;-DG-MD (Muntoni et al. 2011). Finally, two novel mutations (c. 1319 T&gt;G, p.L440R/c.1896-1 G&gt;C) in the POMGnT1 gene were found in this patient.
+<br/><br/>
+Cases 2 and 3 had an atypical MEB phenotype compared to Case 1, as both acquired the ability to walk independently and neither had obvious eye involvement. Patient 2 carried two compound heterozygous mutations, c. 1814 G&gt;C, p.R605P/c. 1513 G&gt;A, p.G505S in the POMGnT1 gene. The c.1814 mutation has previously been described in a Turkish cohort (Zhang et al. 2003; Balci et al. 2007; Demir et al. 2009). Case 2 is an ethnic Kazak with similar race origins to Turks, which may indicate c.1814 to be a potential Turkish founder mutation. Haplotype analysis of this allele could be pursued in the future to help clarify this. This girl acquired the ability to walk at the age 1 and a half year and had milder brain MRI abnormalities. Case 3 carried two compound heterozygous mutations c.575T&gt;C, p.L192P/c.1325G&gt;T, p.R442L in the POMGnT1 gene and acquired ambulation at 2 years of age but demonstrated severe brain malformations on MRI.
+<br/><br/>
+To confirm the pathogenesis of the two novel mutations in Case 1, POMGnT1 enzymatic activity was measured in the dermal fibroblasts of the proband and his parents. POMGnT1 activity was almost absent in the patient, demonstrating a loss of POMGnT1 function. In addition, the POMGnT1 activity in the father, who carries the splice site mutation (c.1896-1 G&gt;C), was lower than that in the mother, who has a missense mutation (L440R). This suggests that the frame-shift mutation may decrease enzymatic activity more than the missense mutation, but to a degree that was tolerated in the asymptomatic father.
+<br/><br/>
+POMGnT1 protein can be divided into four domains: a cytoplasmic tail (Met1–Arg37), a transmembrane domain (Phe38–Ilet58), a stem domain (Leu59–Leu300) and a catalytic domain (Asn301–Thr660) (Yoshida et al. 2001). The catalytic domain is divided into the UDP-GlcNAc–binding region and the substrate-specific region. The splice site mutation we identified, c. 1896-1 G&gt;C, is the first mutation that causes a new termination codon in the 3' UTR (p.V633EfsX53). Enzymatic activity is likely altered due to a change in the three-dimensional protein structure caused by a frame-shift mutation in the substrate-specific region.
+<br/><br/>
+p.L440R is a novel mutation located in the UDP-GlcNAc–binding region of the catalytic domain. Our results reveal that the mutant POMGnT1 had no enzyme activity compared with the wild-type enzyme, with normal protein expression level and molecular weight. Leu⁴⁴⁰ is a highly conserved amino acid among many species, and is also conserved in the human GnT1 region, a homolog of POMGnT1 (Unligil et al. 2000). More importantly, Leu440 localizes to a predicted cystine bridge, between Cys⁴²¹ and Cys⁴⁹⁰ of POMGnT1 (Zhang et al. 2002). The Cys–Cys bond may be essential for POMGnT1 catalytic function (Voglmeir et al. 2011). Therefore, Leu440 is an important residue accounting for the absent activity of the mutant POMGnT1. We further examined the subcellular localization of the wild-type and mutant POMGnT1 s in Case 1. We found that both co-localized to the Golgi apparatus. However, the mutant POMGnT1 also mislocalized to the ER. It is unclear why the mutant POMGnT1 distributed to both the Golgi apparatus and ER. We had reported previously that fukutin forms a complex with POMGnT1 via the fukutin transmembrane region, thereby interacting with POMGnT1 and affecting the subcellular localization of POMGnT1 (Xiong et al. 2006). A recent study showed that several disease-causing missense mutations in the FKTN gene cause abnormal folding and localization of the fukutin protein and further cause mislocalization of POMGnT1 (Tachikawa et al. 2012). We found that the mutant POMGnT1 did not completely co-localize with fukutin, and coexpression of fukutin did not change the subcellular localization of the mutant POMGnT1. Our results suggest that not only the transmembrane domain of fukutin but also a domain including Leu440 of POMGnT1 may affect the interaction of fukutin and POMGnT1.
+<br/><br/>
+A recent report highlights the following genotype–phenotype correlation in MEB disease patients: POMGnT1 mutations near the 5' terminus are associated with more severe cerebral malformations, such as hydrocephalus, while mutations near the 3' terminus are associated with milder cognitive phenotypes (Taniguchi et al. 2003). In contrast, no obvious correlation was identified with regard to maximal motor function achieved and onset and degree of hypotonia (Hehr et al. 2007; Manya et al. 2003). Cases 2 and 3 conform to prior findings, as both had mutations near the 3' terminus, with milder brain malformations, and both had acquired verbal speech, though to a limited extent. Case 1 also had mutations near the 3' terminus, yet demonstrated much more severe brain malformations. No absolute disease-specific correlation has been identified between mutation position and the enzymatic function of POMGnT1, emphasizing the current gaps in our knowledge of enzymatic structure–function relationships and ability to anticipate prognosis based upon mutation identification (Voglmeir et al. 2011).
+<br/><br/>
+All together, this study emphasizes the importance of pursuing genetic confirmatory testing in CMD patients to confirm gene involvement, provide family counseling and prenatal diagnostic testing, expand current genotype-phenotype correlations and analyze glycosyltransferase enzymatic structure–function in the &amp;alpha;-DG-MDs.
+      </content>
+    </section>
+  </main_content>
+
+  <!-- 表格：Table 1 临床与遗传特征表 -->
+  <tables>
+    <table id="Table1">
+      <table_title>Clinical and genetic characteristics of the three patients</table_title>
+      <table_note>P patient, Y year, M male, F female, MR mental retardation, Lis lissencephaly, VC ventriculomegaly, WM white matter abnormality, CD cerebellar dysplasia, CCyst cerebellar cysts, BS brainstem involvement, CC corpus callosum involvement, &amp;alpha;-DG &amp;alpha;-dystroglycan, NA not available</table_note>
+      <thead>
+        <tr>
+          <td>Case number</td>
+          <td>Sex/age</td>
+          <td>Age at onset</td>
+          <td>Motor ability</td>
+          <td>MR</td>
+          <td>Epilepsy</td>
+          <td>MRI</td>
+          <td>Eye</td>
+          <td>CK (U/L)</td>
+          <td>Echocardiogram</td>
+          <td>&amp;alpha;-DG</td>
+          <td>POMGnT1</td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>M/3y8 m</td>
+          <td>Neonatal</td>
+          <td>Cannot control head</td>
+          <td>???</td>
+          <td>Epileptiform discharges</td>
+          <td>Multiple abnormalities</td>
+          <td>Blind; retinal and optic atrophy; strabismus; myopia; retinal dysplasia</td>
+          <td>3,983</td>
+          <td>Normal</td>
+          <td>NA</td>
+          <td>c.1319T&gt;G, p.L440R; c.1896-1G&gt;C, p.V633EfxX53</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>F/6y</td>
+          <td>1Y</td>
+          <td>Walking</td>
+          <td>?</td>
+          <td>–</td>
+          <td>Multiple abnormalities</td>
+          <td>No eye involvement</td>
+          <td>2,142</td>
+          <td>Tricuspid regurgitation</td>
+          <td>Absent</td>
+          <td>c.1814G&gt;C, p.R605P; c.1513G&gt;A, p.G505S</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>M/2y3 m</td>
+          <td>Neonatal</td>
+          <td>Walking</td>
+          <td>?</td>
+          <td>–</td>
+          <td>Multiple abnormalities</td>
+          <td>No eye involvement</td>
+          <td>420</td>
+          <td>Normal</td>
+          <td>NA</td>
+          <td>c.575T&gt;C, p.L192P; c.1325G&gt;T, p.R442L</td>
+        </tr>
+      </tbody>
+    </table>
+  </tables>
+
+  <!-- 图注 -->
+  <figures>
+    <figure id="Fig1">
+      <caption>Case 1 a A myopathic face is seen at age 10 months. b Fundus photography in case 1 showing retinal, choroidal and retinal pigment epithelium (RPE) atrophy, optic nerve hypoplasia and optic nerve atrophy</caption>
+    </figure>
+    <figure id="Fig2">
+      <caption>Cranial magnetic resonance imaging (MRI). Case 1 underwent MRI twice, once at 6 months and once at 28 months of age. The thick red arrow shows cerebellar cysts. The red triangle shows frontal lobe micropolygyria, with anterior predominance of the migrational abnormality. The thin red arrow shows cerebellar and brain stem hypoplasia with a characteristic flattening and kinking of the pons. Case 2 (upper images) and Case 3 (lower images) showed different degrees of brain lesions.</caption>
+    </figure>
+    <figure id="Fig3">
+      <caption>Immunohistochemical staining of skeletal muscle biopsy tissue obtained from Case 2. Staining results for &amp;alpha;-dystroglycan, &amp;beta;-dystroglycan, laminin-a2 and dystrophin.</caption>
+    </figure>
+    <figure id="Fig4">
+      <caption>POMGnT1 sequencing analysis of the family of Case 1. Sequencing peaks and sequence alignment of the mutation region (L440R).</caption>
+    </figure>
+    <figure id="Fig5">
+      <caption>POMGnT1 activity and western blotting. a POMGnT1 activities in cultured dermal fibroblasts obtained from the patients’ families and controls. b POMGnT1 activities in microsomal fractions prepared from wild-type and mutant POMGnT1 and mock-transfected HEK293 cells. c Western blotting analysis of expression levels of wild-type and mutant (L440R) POMGnT1.</caption>
+    </figure>
+    <figure id="Fig6">
+      <caption>Comparison of subcellular localization of wildtype POMGnT1 and mutant POMGnT1 (L440R) in Golgi apparatus and ER.</caption>
+    </figure>
+    <figure id="Fig7">
+      <caption>Comparison of subcellular localization after co-transfection of fukutin with wild-type POMGnT1 and with mutant POMGnT1 (L440R).</caption>
+    </figure>
+  </figures>
+
+  <!-- 致谢 -->
+  <acknowledgments>
+    The authors are grateful to all the patients and their families who have participated in this study. The authors thank Dr. Anne Rutkowski for her comments and criticisms on the manuscript. This work was supported by grants from the Beijing Natural Science Foundation of China (7112133), the National Basic Research Program of China (973 Program, 2012CB94462), the National Natural Science Foundation of China (81271400), the Intramural Research Grant (23–5) for Neurological and Psychiatric Disorders of NCNP, a Comprehensive Research on Disability Health and Welfare from the Ministry of Health (H22-021), and the Research Foundation for Pharmaceutical Sciences.
+  </acknowledgments>
+
+  <!-- 利益冲突 -->
+  <conflict_of_interest>
+    The authors report no conflicts of interest.
+  </conflict_of_interest>
+
+  <!-- 参考文献 -->
+  <references>
+    <reference id="Ref1">Balci B, Morris-Rosendahl DJ, Celebi A, Talim B, Topaloglu H, Dincer P (2007) Prenatal diagnosis of muscle-eye-brain disease. Prenat Diagn 27:51–54</reference>
+    <reference id="Ref2">Biancheri R, Bertini E, Falace A, Pedemonte M, Rossi A, D’Amico A, Scapolan S, Berqamino L, Petrini S, Cassandrini D, Broda P, Manfredi M, Zara F, Santorelli FM, Minetti C, Bruno C (2006) POMGnT1 mutations in congenital muscular dystrophy: genotype-phenotype correlation and expanded clinical spectrum. Arch Neurol 63:1491–1495</reference>
+    <reference id="Ref3">Demir E, Gucuyener K, Akturk A, Talim B, Konus O, Del Bo R, Ghezzi S, Comi GP (2009) An unusual presentation of muscle eye-brain disease: severe eye abnormalities with mild muscle and brain involvement. Neuromuscul Disord 19:692–695</reference>
+    <reference id="Ref4">Diesen C, Saarinen A, Pihko H, Rosenlew C, Cormand B, Dobyns WB, Dieguez J, Valanne L, Joensuu T, Lehesjoki AE (2004) POMGnT1 mutation and phenotypic spectrum in muscle-eye-brain disease. J Med Genet 41:e115</reference>
+    <reference id="Ref5">Godfrey C, Clement E, Mein R, Brockington M, Smith J, Talim B, Straub V, Robb S, Quinlivan R, Feng L, Jimenez-Mallebrera C, Mercuri E, Manzur AY, Kinali M, Torelli S, Brown SC, Sewry CA, Bushby K, Topaloglu H, North K, Abbs S, Muntoni F (2007) Refining genotype phenotype correlations in muscular dystrophies with defective glycosylation of dystroglycan. Brain 130:2725–2735</reference>
+    <reference id="Ref6">Godfrey C, Foley AR, Clement E, Muntoni F (2011) Dystroglycanopathies: coming into focus. Opin Genet Dev 21:679–685</reference>
+    <reference id="Ref7">Hehr U, Uyanik G, Gross C, Walter MC, Bohring A, Cohen M, OehlJaschkowitz B, Bird LM, Shamdeen GM, Bogdahn U, Schuierer G, Topaloglu H, Aigner L, Lochmuller H, Winkler J (2007) Novel POMGnT1 mutations define broader phenotypic spectrum of muscle-eye-brain disease. Neurogenetics 8:279–288</reference>
+    <reference id="Ref8">Hewitt JE (2009) Abnormal glycosylation of dystroglycan in human genetic disease. Biochim Biophys Acta 1792:853–861</reference>
+    <reference id="Ref9">Jiao H, Xiong H, Zhang YZ, Wang S, Yang YL, Wu XR (2011) Clinical and mutation analysis of a Chinese family with muscle eye brain disease. Zhonghua Yi Xue Yi Chuan Xue Za Zhi 28:481–484</reference>
+    <reference id="Ref10">Manya H, Sakai K, Kobayashi K, Taniguchi K, Kawakita M, Toda T, Endo T (2003) Loss-of-function of an N-acetylglucosaminyltransferase, POMGnT1, in muscle-eye-brain disease. Biochem Biophys Res Commun 306:93–97</reference>
+    <reference id="Ref11">Manya H, Bouchet C, Yanagisawa A, Vuillaumier-Barrot S, QuijanoRoy S, Suzuki Y, Maugenre S, Richard P, Inazu T, Merlini L, Romero NB, Leturcq F, Bezier I, Topaloglu H, Estournet B, Seta N, Endo T, Guicheney P (2008) Protein O-mannosyltransferase activities in lymphoblasts from patients with a-dystroglycanopathies. Neuromuscul Disord 18:45–51</reference>
+    <reference id="Ref12">Mercuri E, Messina S, Bruno C, Mora M, Pegoraro E, Comi GP, D’Amico A, Aiello C, Biancheri R, Berardinelli A, Boffi P, Cassandrini D, Laverda A, Moggio M, Morandi L, Moroni I, Pane M, Pezzani R, Pichiecchio A, Pini A, Minetti C, Mongini T, Mottarelli E, Ricci E, Ruggieri A, Saredi S, Scuderi C, Tessa A, Toscano A, Tortorella G, Trevisan CP, Uggetti C, Vasco G, Santorelli FM, Bertini E (2009) Congenital muscular dystrophies with defective glycosylation of dystroglycan: a population study. Neurology 72:1802–1809</reference>
+    <reference id="Ref13">Muntoni F, Voit T (2004) The congenital muscular dystrophies in 2004: a century of exciting progress. Neuromuscul Disord 14:635–649</reference>
+    <reference id="Ref14">Muntoni F, Torelli S, Wells DJ, Brown SC (2011) Muscular dystrophies due to glycosylation defects: diagnosis and therapeutic strategies. Curr Opin Neurol 24:437–442</reference>
+    <reference id="Ref15">Tachikawa M, Kanagawa M, Yu CC, Kobayashi K, Toda T (2012) Mislocalization of fukutin protein by disease-causing missense mutations can be rescued with treatments directed at folding amelioration. J Biol Chem 287:8398–8406</reference>
+    <reference id="Ref16">Taniguchi K, Kobayashi K, Saito K, Yamanouchi H, Ohnuma A, Hayashi YK, Manya H, Jin DK, Lee M, Parano E, Falsaperla R, Pavone P, Van Coster R, Talim B, Steinbrecher A, Straub V, Nishino I, Topaloglu H, Voit T, Endo T, Toda T (2003) Worldwide distribution and broader clinical spectrum of muscle-eye-brain disease. Hum Mol Genet 12:527–534</reference>
+    <reference id="Ref17">Unligil UM, Zhou S, Yuwaraj S, Sarkar M, Schachter H, Rini JM (2000) X-ray crystal structure of rabbit N-acetylglucosaminyltransferase I: catalytic mechanism and a new protein superfamily. EMBO J 19:5269–5280</reference>
+    <reference id="Ref18">Voglmeir J, Kaloo S, Laurent N, Meloni MM, Bohlmann L, Wilson IB, Flitsch SL (2011) Biochemical correlation of activity of the alpha-dystroglycan-modifying glycosyltransferase POMGnT1 with mutations in muscle-eye-brain disease. Biochem J 436:447–455</reference>
+    <reference id="Ref19">Xiong H, Kobayashi K, Tachikawa M, Manya H, Takeda S, Chiyonobu T, Fujikake N, Wang F, Nishimoto A, Morris GE, Nagai Y, Kanagawa M, Endo T, Toda T (2006) Molecular interaction between fukutin and POMGnT1 in the glycosylation pathway of alpha-dystroglycan. Biochem Biophys Res Commun 350:935–941</reference>
+    <reference id="Ref20">Xiong H, Wang S, Kobayashi K, Jiang Y, Wang J, Chang X, Yuan Y, Liu J, Toda T, Fukuyama Y, Wu X (2009) Fukutin gene retrotransposal insertion in a non-Japanese Fukuyama congenital muscular dystrophy (FCMD) patient. Am J Med Genet A 149A:2403–2408</reference>
+    <reference id="Ref21">Yoshida A, Kobayashi K, Manya H, Taniguchi K, Kano H, Mizuno M, Inazu T, Mitsuhashi H, Takahashi S, Takeuchi M, Herrmann R, Straub V, Talim B, Voit T, Topaloglu H, Toda T, Endo T (2001) Muscular dystrophy and neuronal migration disorder caused by mutations in a glycosyltransferase, POMGnT1. Dev Cell 1:717–724</reference>
+    <reference id="Ref22">Zhang W, Betel D, Schachter H (2002) Cloning and expression of a novel UDP-GlcNAc:alpha-D-mannoside beta1,2-N-acetylglucosaminyltransferase homologous to UDP-GlcNAc:alpha-3-Dmannoside beta1,2-N-acetylglucosaminyltransferase I. Biochem J 361:153–162</reference>
+    <reference id="Ref23">Zhang W, Vajsar J, Cao P, Breningstall G, Diesen C, Dobyns W, Herrmann R, Lehesjoki AE, Steinbrecher A, Talim B, Toda T, Topaloglu H, Voit T, Schachter H (2003) Enzymatic diagnostic test for muscle-eye-brain type congenital muscular dystrophy using commercially available reagents. Clin Biochem 36:739–744</reference>
+    <reference id="Ref24">Zhang H, Ding J, Wang F, Yang H (2008) Prenatal diagnosis and genetic counseling of a Chinese Alport syndrome kindred. Genet Test 12:7–12</reference>
+  </references>
+</document>

@@ -9,13 +9,21 @@ from bioc import biocxml
 from lxml import etree
 import io
 # Import the following stuff for implementing custom retrievers
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 
 from app.core.table_functions import table_extraction_with_deepseek
 from app.core.utils import extractTablesFromXML
-from app.prompts import PM3_ANSWER
+from app.prompts import PM3_ANSWER, render_chinese_translation, render_pm3_evidence_workflow
+
+# Markdown-aware chunker. For markdown papers (e.g. MinerU output) this
+# keeps HTML ``<table>...</table>`` blocks atomic instead of slicing them
+# mid-row, which silently destroyed the variant evidence in the previous
+# ``RecursiveCharacterTextSplitter``-only pipeline. The dispatcher inside
+# ``split_docs`` routes plain text (XML paper dumps) to the LangChain
+# fallback so behaviour for that path is unchanged.
+from app.core.markdown_splitter import split_docs as _markdown_split_docs  # noqa: E402
 
 set_debug(False)
 
@@ -79,8 +87,10 @@ import glob
 import json
 import re
 import copy
+import html
 import httpx
 import pandas as pd
+from bs4 import BeautifulSoup
 
 
 os.environ['CURL_CA_BUNDLE'] = ''  # Fix SSL error for Mutalyzer3
@@ -185,10 +195,48 @@ async def _run_blocking(fn, *args, pool=None, **kwargs):
     )
 
 
+def _derive_protein_search_forms(protein_description: str, protein_map: Dict[str, str]) -> tuple[str, str, str]:
+    """Convert Mutalyzer's protein description into long/short search keys."""
+    returned_prot = protein_description.split(':')[-1]
+    m = re.match(r'p\.\((.*)\)$', returned_prot)
+    prot = m.group(1) if m else returned_prot.replace("p.", "", 1)
+    if len(prot) < 5:  # Mutalyzer can return non-informative values like p.(=).
+        raise Exception(f'Protein change too short: {returned_prot}')
+
+    # Some papers shorten frameshifts, e.g. Cys1447Glnfs29 -> Cys1447fs.
+    var_protein = re.sub(r'([A-Za-z]{3}\d+)[A-Za-z]{3}fs.*', r'\1fs', prot)
+    var_protein_short = var_protein
+    for (k, v) in protein_map.items():
+        var_protein_short = var_protein_short.replace(k, v)
+    # Remove X and * (meaning terminal) because papers are inconsistent here.
+    var_protein = var_protein.replace('X', '').replace('*', '')
+    var_protein_short = var_protein_short.replace('X', '').replace('*', '')
+    return prot, var_protein, var_protein_short
+
+
+def _record_mutalyzer_success(
+    diagnostics: Dict[str, Any],
+    protein_description: str,
+    protein_map: Dict[str, str],
+) -> None:
+    prot, var_protein, var_protein_short = _derive_protein_search_forms(
+        protein_description,
+        protein_map,
+    )
+    mutalyzer_info = diagnostics["mutalyzer"]
+    mutalyzer_info["raw_protein_description"] = protein_description.split(':')[-1]
+    mutalyzer_info["protein_after_p_strip"] = prot
+    mutalyzer_info["trimmed_long"] = var_protein
+    mutalyzer_info["trimmed_short"] = var_protein_short
+    mutalyzer_info["status"] = "ok"
+    mutalyzer_info["error"] = None
+
+
 class VariantSpecificRetriever(BaseRetriever):
     documents: List[Document]
     k: int
     protein_map: Dict[str, str]
+    diagnostics: Dict[str, Any]
     # Per-instance retriever results. Used to live in a module-level list
     # (`retriever_OK`) which collided between concurrent Streamlit sessions.
     # Now these are Pydantic fields on the instance, so each user session's
@@ -199,6 +247,7 @@ class VariantSpecificRetriever(BaseRetriever):
 
     # Assumes "query" to be the target variant (in HGVS notation)
     def _get_relevant_documents(self, query):
+        diagnostics = self.diagnostics
         variant = query
         # Remove the contig name (NM_xxxxxx)
         target_var = variant.split(":")[-1]
@@ -208,9 +257,9 @@ class VariantSpecificRetriever(BaseRetriever):
         # Record the input pieces the rest of the diagnostics will refer to.
         # This happens before the Mutalyzer call so even a failed lookup leaves
         # a useful "what did we ask for" trail in the rendered block.
-        mutalyzer_diagnostics["input_hgvs"] = variant
-        mutalyzer_diagnostics["var_dna"] = var_dna
-        mutalyzer_diagnostics["mutalyzer"]["endpoint"] = (
+        diagnostics["input_hgvs"] = variant
+        diagnostics["var_dna"] = var_dna
+        diagnostics["mutalyzer"]["endpoint"] = (
             f'https://mutalyzer.nl/api/normalize/{variant}?only_variants=false'
         )
 
@@ -221,44 +270,32 @@ class VariantSpecificRetriever(BaseRetriever):
         # the second concurrent user's button handler).
         var_protein = None
         var_protein_short = None
-        try:
-            r = requests.get(
-                mutalyzer_diagnostics["mutalyzer"]["endpoint"],
-                timeout=30,
-            )
-            j = r.json()
-            returned_prot = j['protein']['description'].split(':')[-1]
-            mutalyzer_diagnostics["mutalyzer"]["raw_protein_description"] = returned_prot
-            # Remove the p.()
-            m = re.match(r'p.\((.*)\)', returned_prot)
-            prot = m.group(1)
-            mutalyzer_diagnostics["mutalyzer"]["protein_after_p_strip"] = prot
-            if len(prot) < 5:  # Too short (sometimes Mutalyzer returns something like p.(=) )
-                raise Exception(f'Protein change too short: {returned_prot}')
-            # Sometimes the protein mutation is like Cys1447Glnfs29 but some papers write as Cys1447fs,
-            # so we remove the whole Glnfs part
-            var_protein = re.sub(r'[A-Za-z]{3}fs.*', '', prot)
-            # Convert the protein to short form ( -> )
-            var_protein_short = var_protein
-            for (k,v) in self.protein_map.items():
-                var_protein_short = var_protein_short.replace(k, v)
-            # Remove X and * (meaning Terminal) from the protein notation, since we don't know the paper is using which one
-            var_protein = var_protein.replace('X', '').replace('*', '')
-            var_protein_short = var_protein_short.replace('X', '').replace('*', '')
-            mutalyzer_diagnostics["mutalyzer"]["trimmed_long"] = var_protein
-            mutalyzer_diagnostics["mutalyzer"]["trimmed_short"] = var_protein_short
-            mutalyzer_diagnostics["mutalyzer"]["status"] = "ok"
-            #print(f'Protein : {var_protein} ({var_protein_short})')
-        except KeyError as e:
-            mutalyzer_diagnostics["mutalyzer"]["status"] = "error"
-            mutalyzer_diagnostics["mutalyzer"]["error"] = f"KeyError: {e}"
-            #print('Protein: [ERROR] Not found by Mutalyzer')
-            pass
-        except Exception as e:
-            mutalyzer_diagnostics["mutalyzer"]["status"] = "error"
-            mutalyzer_diagnostics["mutalyzer"]["error"] = str(e)
-            #print(f'Protein : [ERROR] {e}')
-            pass
+        mutalyzer_info = diagnostics["mutalyzer"]
+        if mutalyzer_info.get("status") == "ok":
+            var_protein = mutalyzer_info.get("trimmed_long")
+            var_protein_short = mutalyzer_info.get("trimmed_short")
+        else:
+            try:
+                r = requests.get(
+                    diagnostics["mutalyzer"]["endpoint"],
+                    timeout=30,
+                )
+                j = r.json()
+                returned_prot = j['protein']['description'].split(':')[-1]
+                _record_mutalyzer_success(diagnostics, returned_prot, self.protein_map)
+                var_protein = diagnostics["mutalyzer"]["trimmed_long"]
+                var_protein_short = diagnostics["mutalyzer"]["trimmed_short"]
+                #print(f'Protein : {var_protein} ({var_protein_short})')
+            except KeyError as e:
+                diagnostics["mutalyzer"]["status"] = "error"
+                diagnostics["mutalyzer"]["error"] = f"KeyError: {e}"
+                #print('Protein: [ERROR] Not found by Mutalyzer')
+                pass
+            except Exception as e:
+                diagnostics["mutalyzer"]["status"] = "error"
+                diagnostics["mutalyzer"]["error"] = str(e)
+                #print(f'Protein : [ERROR] {e}')
+                pass
 
         # Done with conversion. Now do the retrieval (= regex matching)
 
@@ -273,9 +310,9 @@ class VariantSpecificRetriever(BaseRetriever):
         # Record the DNA regex the matcher actually used — this is the pattern
         # the rest of the function searches the chunks with, so the value
         # displayed in the diagnostics block must match exactly.
-        mutalyzer_diagnostics["dna_search"]["regex_pattern"] = dna_pattern
-        mutalyzer_diagnostics["protein_search"]["long_form"] = var_protein
-        mutalyzer_diagnostics["protein_search"]["short_form"] = var_protein_short
+        diagnostics["dna_search"]["regex_pattern"] = dna_pattern
+        diagnostics["protein_search"]["long_form"] = var_protein
+        diagnostics["protein_search"]["short_form"] = var_protein_short
 
         for chunk in self.documents:
             # Re-encode the text to get rid of those annoying Unicode \x80\x89 (whitespaces)
@@ -292,13 +329,13 @@ class VariantSpecificRetriever(BaseRetriever):
             dig_dna_matcher = re.compile(r'\D' + str(dig_dna[0]) + r'\D') if dig_dna else None
             dig_protein_matcher = re.compile(r'\D' + str(dig_protein[0]) + r'\D') if dig_protein else None
 
-            mutalyzer_diagnostics["position_fallback"]["triggered"] = True
+            diagnostics["position_fallback"]["triggered"] = True
             if dig_dna:
-                mutalyzer_diagnostics["position_fallback"]["dna_pattern"] = (
+                diagnostics["position_fallback"]["dna_pattern"] = (
                     r'\D' + str(dig_dna[0]) + r'\D'
                 )
             if dig_protein:
-                mutalyzer_diagnostics["position_fallback"]["protein_pattern"] = (
+                diagnostics["position_fallback"]["protein_pattern"] = (
                     r'\D' + str(dig_protein[0]) + r'\D'
                 )
 
@@ -322,24 +359,24 @@ class VariantSpecificRetriever(BaseRetriever):
                 prot_long_count += 1
             if var_protein_short and chunk.page_content.find(var_protein_short) >= 0:
                 prot_short_count += 1
-        mutalyzer_diagnostics["dna_search"]["matched"] = dna_match_count > 0
-        mutalyzer_diagnostics["dna_search"]["chunk_count"] = dna_match_count
-        mutalyzer_diagnostics["protein_search"]["long_matched"] = prot_long_count > 0
-        mutalyzer_diagnostics["protein_search"]["short_matched"] = prot_short_count > 0
-        mutalyzer_diagnostics["protein_search"]["chunk_count_long"] = prot_long_count
-        mutalyzer_diagnostics["protein_search"]["chunk_count_short"] = prot_short_count
-        if mutalyzer_diagnostics["position_fallback"]["triggered"]:
-            mutalyzer_diagnostics["position_fallback"]["matched"] = len(retrieved_chunks) > 0
-            mutalyzer_diagnostics["position_fallback"]["chunk_count"] = len(retrieved_chunks)
+        diagnostics["dna_search"]["matched"] = dna_match_count > 0
+        diagnostics["dna_search"]["chunk_count"] = dna_match_count
+        diagnostics["protein_search"]["long_matched"] = prot_long_count > 0
+        diagnostics["protein_search"]["short_matched"] = prot_short_count > 0
+        diagnostics["protein_search"]["chunk_count_long"] = prot_long_count
+        diagnostics["protein_search"]["chunk_count_short"] = prot_short_count
+        if diagnostics["position_fallback"]["triggered"]:
+            diagnostics["position_fallback"]["matched"] = len(retrieved_chunks) > 0
+            diagnostics["position_fallback"]["chunk_count"] = len(retrieved_chunks)
 
         if len(retrieved_chunks) > 0:
             self.ok = True
         self.chunk_count = len(retrieved_chunks)
         self.short_protein = var_protein_short
 
-        mutalyzer_diagnostics["retriever_summary"]["ok"] = bool(self.ok)
-        mutalyzer_diagnostics["retriever_summary"]["total_chunks_returned"] = len(retrieved_chunks)
-        mutalyzer_diagnostics["retriever_summary"]["short_protein"] = var_protein_short
+        diagnostics["retriever_summary"]["ok"] = bool(self.ok)
+        diagnostics["retriever_summary"]["total_chunks_returned"] = len(retrieved_chunks)
+        diagnostics["retriever_summary"]["short_protein"] = var_protein_short
         return retrieved_chunks[:self.k]
 
 
@@ -388,20 +425,18 @@ MUTALYZER_DIAGNOSTICS_TEMPLATE: Dict[str, Any] = {
 }
 
 
-def _reset_mutalyzer_diagnostics() -> None:
-    """Reset the module-level diagnostics dict to its template state.
+def _new_mutalyzer_diagnostics() -> Dict[str, Any]:
+    """Create a per-query diagnostics dict.
 
-    Called at the start of each ``query_variant_in_paper_xml`` invocation.
-    The dict is mutated in place so the retriever (which only sees the
-    module-level binding) keeps writing into the same object — it just
-    starts with clean defaults.
-
-    NOTE: this only protects against stale state between *sequential* runs.
-    Two concurrent users still race on this dict. The per-call isolation
-    fix (passing a per-call dict through the retriever) is a follow-up.
+    The module-level ``mutalyzer_diagnostics`` is kept updated for older
+    imports/debugging, but the query pipeline passes this per-call object
+    through the retriever so concurrent Streamlit sessions do not race on
+    one shared dict.
     """
+    diagnostics = copy.deepcopy(MUTALYZER_DIAGNOSTICS_TEMPLATE)
     mutalyzer_diagnostics.clear()
-    mutalyzer_diagnostics.update(copy.deepcopy(MUTALYZER_DIAGNOSTICS_TEMPLATE))
+    mutalyzer_diagnostics.update(copy.deepcopy(diagnostics))
+    return diagnostics
 
 
 class StaticRetriever(BaseRetriever):
@@ -483,13 +518,101 @@ def load_markdown_paper(filename: str) -> str:
         return fp.read()
 
 
-def extract_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
-    """Extract simple pipe-style Markdown tables into DataFrames.
+def _dedupe_columns(columns: list[Any]) -> list[str]:
+    """Return unique, readable DataFrame column names."""
+    seen: dict[str, int] = {}
+    deduped: list[str] = []
+    for idx, column in enumerate(columns, start=1):
+        if isinstance(column, tuple):
+            parts = [str(part).strip() for part in column if str(part).strip()]
+            base = " / ".join(parts)
+        else:
+            base = str(column).strip()
+        if not base or base.lower().startswith("unnamed:"):
+            base = f"Column {idx}"
+        count = seen.get(base, 0)
+        seen[base] = count + 1
+        deduped.append(base if count == 0 else f"{base}.{count + 1}")
+    return deduped
 
-    This intentionally covers the common MinerU Markdown output shape. More
-    complex HTML tables can be added later without affecting the text path.
-    """
+
+def _normalise_table_dataframe(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Clean an extracted table and drop empty/degenerate results."""
+    if df is None or df.empty:
+        return None
+    cleaned = df.copy()
+    cleaned = cleaned.dropna(how="all").dropna(axis=1, how="all")
+    if cleaned.empty:
+        return None
+    cleaned = cleaned.map(
+        lambda value: html.unescape(str(value)).strip()
+        if pd.notna(value)
+        else ""
+    )
+    cleaned.columns = _dedupe_columns(list(cleaned.columns))
+    if cleaned.shape[0] == 0 or cleaned.shape[1] == 0:
+        return None
+    return cleaned
+
+
+def _extract_html_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
+    """Extract HTML tables embedded in Markdown, including rowspan/colspan."""
     tables: list[pd.DataFrame] = []
+    lower_text = markdown_text.lower()
+    if "<table" not in lower_text and "&lt;table" not in lower_text:
+        return tables
+
+    candidate_texts = [markdown_text]
+    if "&lt;table" in lower_text and "<table" not in lower_text:
+        candidate_texts.append(html.unescape(markdown_text))
+
+    seen_table_html: set[str] = set()
+    for candidate_text in candidate_texts:
+        soup = BeautifulSoup(candidate_text, "html.parser")
+        for table in soup.find_all("table"):
+            table_html = str(table)
+            if table_html in seen_table_html:
+                continue
+            seen_table_html.add(table_html)
+            parsed_tables: list[pd.DataFrame] = []
+            try:
+                parsed_tables = pd.read_html(io.StringIO(table_html))
+            except (ImportError, ValueError):
+                parsed_tables = []
+            except Exception as exc:
+                print(f"Failed to parse HTML table with pandas: {exc}")
+
+            if not parsed_tables:
+                rows: list[list[str]] = []
+                for tr in table.find_all("tr"):
+                    cells = [
+                        html.unescape(cell.get_text(" ", strip=True))
+                        for cell in tr.find_all(["th", "td"])
+                    ]
+                    if cells:
+                        rows.append(cells)
+                if not rows:
+                    continue
+                max_cols = max(len(row) for row in rows)
+                padded_rows = [row + [""] * (max_cols - len(row)) for row in rows]
+                header, body = padded_rows[0], padded_rows[1:]
+                parsed_tables = [pd.DataFrame(body, columns=header)] if body else [pd.DataFrame(padded_rows)]
+
+            for parsed in parsed_tables:
+                cleaned = _normalise_table_dataframe(parsed)
+                if cleaned is not None:
+                    tables.append(cleaned)
+    return tables
+
+
+def extract_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
+    """Extract Markdown and embedded HTML tables into DataFrames.
+
+    MinerU-style Markdown often contains literal HTML tables rather than
+    pipe-style Markdown tables. Keep both paths so older exports and simpler
+    Markdown still work.
+    """
+    tables: list[pd.DataFrame] = _extract_html_tables_from_markdown(markdown_text)
     block: list[str] = []
 
     def flush_block() -> None:
@@ -506,7 +629,9 @@ def extract_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
             if len(cells) == len(header):
                 rows.append(cells)
         if header and rows:
-            tables.append(pd.DataFrame(rows, columns=header))
+            cleaned = _normalise_table_dataframe(pd.DataFrame(rows, columns=header))
+            if cleaned is not None:
+                tables.append(cleaned)
         block = []
 
     for raw_line in markdown_text.splitlines():
@@ -550,6 +675,23 @@ def _normalize_chunk_text(text: str, max_chars: int = 1800) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 1].rstrip() + "…"
+
+
+def _strip_model_reasoning(text: Any) -> str:
+    """Remove model-visible chain-of-thought wrappers from provider output."""
+    raw = str(text or "")
+    cleaned = raw
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"</think>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip()
+    if cleaned:
+        return cleaned
+
+    markers = []
+    for pattern in (r"\*?YES\*?[^.\n]*(?:[.\n]|$)", r"\*?None\*?", r"c\.\s*[\w.+\-*> ]+", r"p\.\s*[\w.+\-*> ]+"):
+        markers.extend(match.group(0).strip() for match in re.finditer(pattern, raw, flags=re.IGNORECASE))
+    return ", ".join(dict.fromkeys(marker for marker in markers if marker))[:900]
 
 
 def _evidence_id_for_doc(doc: Document) -> str:
@@ -720,7 +862,7 @@ async def query_variant_in_paper_xml(
           races.
     """
     _init_async_runtime()
-    _reset_mutalyzer_diagnostics()
+    diagnostics = _new_mutalyzer_diagnostics()
 
     llm_a = _build_llm(model_name_text, api_key, api_url)
 
@@ -758,7 +900,12 @@ async def query_variant_in_paper_xml(
     doc_wrapper = [Document(page_content=doc_filtered, metadata={'source': 'local'})]
     doc_chunks = split_docs(doc_wrapper)
     # Try our custom retriever
-    variant_retriever = VariantSpecificRetriever(documents=doc_chunks, k=5, protein_map=protein_map)
+    variant_retriever = VariantSpecificRetriever(
+        documents=doc_chunks,
+        k=5,
+        protein_map=protein_map,
+        diagnostics=diagnostics,
+    )
     variant_hgvs = query_variant
 
     # Mutalyzer lookup. The sync version used ``requests``; we move to
@@ -767,19 +914,25 @@ async def query_variant_in_paper_xml(
     # and let downstream code skip the protein path.
     protein = None
     c_protein_id: List[str] = []
+    diagnostics["input_hgvs"] = query_variant
+    diagnostics["var_dna"] = c_variant.replace('c.', '').replace('(', '').replace(')', '')
+    diagnostics["mutalyzer"]["endpoint"] = (
+        f'https://mutalyzer.nl/api/normalize/{query_variant}?only_variants=false'
+    )
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.get(
-                f'https://mutalyzer.nl/api/normalize/{query_variant}?only_variants=false'
-            )
+            r = await client.get(diagnostics["mutalyzer"]["endpoint"])
             r.raise_for_status()
             j = r.json()
             protein = j['protein']['description'].split(':')[-1]
             if protein == 'p.(=)':
                 raise Exception('invalid notation')
+            _record_mutalyzer_success(diagnostics, protein, protein_map)
             c_protein_id = re.findall(r"\d+", protein)
-            mutalyzer_diagnostics["mutalyzer"]["c_protein_id_digits"] = c_protein_id
+            diagnostics["mutalyzer"]["c_protein_id_digits"] = c_protein_id
     except Exception as e:
+        diagnostics["mutalyzer"]["status"] = "error"
+        diagnostics["mutalyzer"]["error"] = str(e)
         protein = None
         c_protein_id = []
 
@@ -827,7 +980,7 @@ async def query_variant_in_paper_xml(
                 for c_answer in c_cmd[1]:
                     if not isinstance(c_answer, tuple):
                         try:
-                            table_results_plaintext.append(c_answer['plainText'])
+                            table_results_plaintext.append(_strip_model_reasoning(c_answer['plainText']))
                         except Exception:
                             pass
     else:
@@ -899,14 +1052,17 @@ async def query_variant_in_paper_xml(
             return None
         if query_type == VARIANT_QUERY:
             predefined_query = (
-                f"Does the paper mention the queried variant ({current_variant}) and what is the surrounding context?"
-                f"if such variant is existed, say *YES* at first otherwise say *None* (focus on variant: {current_variant})"
+                f"Does the paper mention the queried variant ({current_variant})? "
+                "Answer in at most 2 bullet points. Start with *YES* or *None*. "
+                "Include only the paper's exact variant notation, patient/case ID if stated, "
+                "and genotype context. Do not explain your reasoning."
             )
         else:
             predefined_query = (
                 f"If {current_variant} is compound heterozygous with another variant, name it; "
                 f"if {current_variant} is homozygous, say homozygous; if no related variant is found, say *None*. "
-                f"List all results seperated by comma and wrap the answers by *."
+                "Return only the variant(s), zygosity/phase word, or *None*. "
+                "List results separated by comma and wrap answers by *. Do not explain your reasoning."
             )
 
         static = StaticRetriever(docs=docs)
@@ -931,7 +1087,7 @@ async def query_variant_in_paper_xml(
                     "c_index": c_index,
                     "query_type": query_type,
                     "current_variant": current_variant,
-                    "cur_answers": response["result"],
+                    "cur_answers": _strip_model_reasoning(response["result"]),
                     "source_documents": response["source_documents"],
                     "evidence_ids": evidence_ids,
                     "protein_short": protein_short,
@@ -1029,7 +1185,7 @@ async def query_variant_in_paper_xml(
     # Build the structured output consumed by render_result() in the Streamlit
     # pages. Returns a dict with the same three blocks that the old
     # markdown-string version produced, plus a fourth "Mutalyzer & Search
-    # Diagnostics" block fed from the global mutalyzer_diagnostics dict that
+    # Diagnostics" block fed from the per-query diagnostics dict that
     # VariantSpecificRetriever populated during the query. The CLI path
     # (__main__ → main() → print(results)) still works because dicts print
     # fine in the terminal.
@@ -1044,7 +1200,7 @@ async def query_variant_in_paper_xml(
             {
                 "title": "Query Variant Found in PaperText",
                 "body": (
-                    f"- {text_variant_answer if text_variant_hit != '' else 'Variant not found in text part!'}"
+                    f"- {text_variant_answer if text_variant_hit else 'Variant not found in text part!'}"
                 ),
                 **({"evidence_ids": text_variant_evidence_ids} if include_evidence else {}),
             },
@@ -1067,16 +1223,486 @@ async def query_variant_in_paper_xml(
             },
             {
                 "title": "Mutalyzer & Search Diagnostics",
-                "body": format_mutalyzer_diagnostics(mutalyzer_diagnostics),
+                "body": format_mutalyzer_diagnostics(diagnostics),
                 **({"evidence_ids": list(evidence_by_id.keys())} if include_evidence else {}),
             },
         ],
     }
+    mutalyzer_diagnostics.clear()
+    mutalyzer_diagnostics.update(copy.deepcopy(diagnostics))
     if include_evidence:
         results["evidence"] = list(evidence_by_id.values())
         if is_markdown_input:
             results["document_markdown"] = doc_filtered
     return results
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """Parse the first JSON object from an LLM response."""
+    if not isinstance(text, str):
+        raise ValueError("LLM response is not text")
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        return json.loads(cleaned[start : end + 1])
+
+
+def _valid_evidence_ids(raw_ids: Any, valid_ids: set[str]) -> list[str]:
+    if not isinstance(raw_ids, list):
+        return []
+    return [item for item in dict.fromkeys(raw_ids) if isinstance(item, str) and item in valid_ids]
+
+
+def _all_valid_evidence_ids(valid_ids: set[str]) -> list[str]:
+    return sorted(valid_ids)
+
+
+def _string_value(value: Any, fallback: str = "Not stated") -> str:
+    if value in (None, "", []):
+        return fallback
+    return str(value).strip()
+
+
+def _workflow_item_section(
+    *,
+    title: str,
+    item: dict[str, Any],
+    valid_ids: set[str],
+    fields: list[tuple[str, str]],
+    section_id: str | None = None,
+) -> Optional[dict[str, Any]]:
+    evidence_ids = _valid_evidence_ids(item.get("evidence_ids"), valid_ids)
+    if not evidence_ids:
+        return None
+    lines = [f"**Conclusion:** {_string_value(item.get('conclusion'))}", ""]
+    for label, key in fields:
+        lines.append(f"- **{label}:** {_string_value(item.get(key))}")
+    section = {
+        "title": title,
+        "body": "\n".join(lines),
+        "evidence_ids": evidence_ids,
+    }
+    if section_id:
+        section["section_id"] = section_id
+    return section
+
+
+def _contains_any(text: Any, needles: tuple[str, ...]) -> bool:
+    value = str(text or "").lower()
+    return any(needle in value for needle in needles)
+
+
+def _compose_standardized_conclusion(workflow: dict[str, Any]) -> str:
+    """Compose the fixed PM3 conclusion template from structured evidence."""
+    included_cases = [
+        item for item in workflow.get("included_cases", [])
+        if isinstance(item, dict)
+    ]
+    family_items = [
+        item for item in workflow.get("family_evidence", [])
+        if isinstance(item, dict)
+    ]
+
+    countable_cases = [
+        item for item in included_cases
+        if not _contains_any(item.get("pm3_relevance"), ("not countable",))
+    ]
+    case_count = len(countable_cases)
+
+    phenotypes = [
+        _string_value(item.get("disease_or_phenotype"), "")
+        for item in countable_cases
+        if _string_value(item.get("disease_or_phenotype"), "")
+    ]
+    phenotype_text = "；".join(dict.fromkeys(phenotypes)) or "疾病/表型待确认"
+
+    compound_cases = [
+        item for item in countable_cases
+        if _contains_any(item.get("zygosity_or_phase"), ("compound heterozygous", "复合杂合"))
+    ]
+    second_alleles = [
+        _string_value(item.get("second_allele"), "")
+        for item in compound_cases
+        if _string_value(item.get("second_allele"), "")
+        and _string_value(item.get("second_allele"), "").lower() != "unknown"
+    ]
+    second_allele_text = "、".join(dict.fromkeys(second_alleles)) or "具体位点待确认"
+
+    homozygous_count = sum(
+        1 for item in countable_cases
+        if _contains_any(item.get("zygosity_or_phase"), ("homozygous", "纯合"))
+    )
+
+    trans_support_items = [
+        item for item in family_items
+        if _contains_any(
+            " ".join(
+                [
+                    _string_value(item.get("phase_or_trans_support"), ""),
+                    _string_value(item.get("parents_tested"), ""),
+                    _string_value(item.get("parental_genotypes"), ""),
+                    _string_value(item.get("segregation_relevance"), ""),
+                ]
+            ),
+            ("confirmed trans", "supports trans", "parents tested", "segregation", "父母", "反式"),
+        )
+    ]
+    trans_count = len(trans_support_items)
+    methods = []
+    for item in trans_support_items:
+        method = _string_value(item.get("phase_or_trans_support"), "")
+        if method and method != "Not stated":
+            methods.append(method)
+        parent = _string_value(item.get("parents_tested"), "")
+        if parent and parent != "Not stated":
+            methods.append(f"parents tested: {parent}")
+    method_text = "；".join(dict.fromkeys(methods)) or "父母/家庭检测/其他方法待确认"
+
+    return (
+        f"该变异已在至少{case_count if case_count else '[待确认]'}名患有{phenotype_text}的个体中被检测到。\n"
+        f"其中{len(compound_cases) if compound_cases else '[待确认]'}名为该变异与一个致病性或可能致病性变异{second_allele_text}的复合杂合，\n"
+        f"其中{trans_count if trans_count else '[待确认]'}名通过{method_text}确认处于反式位置。\n"
+        f"{homozygous_count}名个体为该变异纯合。[PMID:待确认]"
+    )
+
+
+def _fallback_pm3_workflow_result(
+    *,
+    query_variant: str,
+    base_result: dict[str, Any],
+    reason: str,
+) -> dict[str, Any]:
+    evidence = base_result.get("evidence", [])
+    valid_ids = {
+        item.get("id")
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    linked_ids = _all_valid_evidence_ids(valid_ids)
+    sections = [
+        {
+            "title": "标准化结论",
+            "body": (
+                "该变异已在[证据不足，需人工复核]名患有[疾病/表型待确认]的个体中被检测到。\n"
+                "其中[待确认]名为该变异与一个致病性或可能致病性变异[具体位点待确认]的复合杂合，\n"
+                "其中[待确认]名通过[父母/家庭检测/其他方法待确认]确认处于反式位置。\n"
+                "[待确认]名个体为该变异纯合。[PMID:待确认]\n\n"
+                f"Workflow synthesis was not completed automatically: {reason}"
+            ),
+            "evidence_ids": [],
+            "section_id": "standardized-conclusion",
+            "style": "standardized",
+        },
+        {
+            "title": "基础检索结论（需人工复核）",
+            "body": (
+                f"Target variant: `{query_variant}`\n\n"
+                "The workflow page could not produce strict structured PM3 conclusions. "
+                "Review the linked chunks and the base AutoPM3 findings below."
+            ),
+            "evidence_ids": linked_ids,
+        },
+    ]
+    sections.extend(_base_markdown_evidence_sections(base_result, valid_ids))
+    return {
+        "title": "PM3 Evidence Workflow",
+        "sections": sections,
+        "evidence": evidence,
+        "document_markdown": base_result.get("document_markdown", ""),
+        "workflow_raw": None,
+        "base_result": base_result,
+    }
+
+
+def _build_pm3_workflow_sections(
+    workflow: dict[str, Any],
+    *,
+    query_variant: str,
+    valid_ids: set[str],
+) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+
+    sections.append(
+        {
+            "title": "标准化结论",
+            "body": _compose_standardized_conclusion(workflow),
+            "evidence_ids": [],
+            "section_id": "standardized-conclusion",
+            "style": "standardized",
+        }
+    )
+
+    included_fields = [
+        ("Case ID", "case_id"),
+        ("Source", "source_type"),
+        ("Family/relationship", "family_or_relationship"),
+        ("Disease/phenotype", "disease_or_phenotype"),
+        ("Target variant", "target_variant"),
+        ("Second allele", "second_allele"),
+        ("Zygosity/phase", "zygosity_or_phase"),
+        ("Phase confirmation", "phase_confirmation"),
+        ("Segregation/parental testing", "segregation_or_parental_testing"),
+        ("PM3 relevance", "pm3_relevance"),
+    ]
+    for idx, item in enumerate(workflow.get("included_cases", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        title = f"病例证据 {idx}"
+        section = _workflow_item_section(
+            title=title,
+            item=item,
+            valid_ids=valid_ids,
+            fields=included_fields,
+            section_id=f"case-{idx}",
+        )
+        if section:
+            sections.append(section)
+            sections[0].setdefault("linked_section_ids", []).append(section["section_id"])
+
+    family_fields = [
+        ("Family ID", "family_id"),
+        ("Proband/case", "proband_or_case"),
+        ("Parents tested", "parents_tested"),
+        ("Parental genotypes", "parental_genotypes"),
+        ("Siblings/relatives", "siblings_or_relatives"),
+        ("Phase/trans support", "phase_or_trans_support"),
+        ("Segregation relevance", "segregation_relevance"),
+    ]
+    for idx, item in enumerate(workflow.get("family_evidence", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        title = f"家系证据 {idx}"
+        section = _workflow_item_section(
+            title=title,
+            item=item,
+            valid_ids=valid_ids,
+            fields=family_fields,
+            section_id=f"family-{idx}",
+        )
+        if section:
+            sections.append(section)
+            sections[0].setdefault("linked_section_ids", []).append(section["section_id"])
+
+    excluded_fields = [
+        ("Exclusion reason", "exclusion_reason"),
+    ]
+    for idx, item in enumerate(workflow.get("excluded_cases", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        title = f"排除/不计分证据 {idx}: {_string_value(item.get('case_id'), f'Case {idx}')}"
+        section = _workflow_item_section(
+            title=title,
+            item=item,
+            valid_ids=valid_ids,
+            fields=excluded_fields,
+            section_id=f"excluded-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    for idx, item in enumerate(workflow.get("deduplication_notes", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        title = f"去重判断 {idx}"
+        section = _workflow_item_section(
+            title=title,
+            item=item,
+            valid_ids=valid_ids,
+            fields=[("Status", "status")],
+            section_id=f"dedupe-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    scoring = workflow.get("scoring_summary")
+    if isinstance(scoring, dict):
+        scoring_section = _workflow_item_section(
+            title="人工算分依据",
+            item=scoring,
+            valid_ids=valid_ids,
+            fields=[
+                ("Included case count", "included_case_count"),
+                ("PM3 level", "pm3_level"),
+            ],
+            section_id="scoring-summary",
+        )
+        if scoring_section:
+            sections.append(scoring_section)
+            sections[0].setdefault("linked_section_ids", []).append(scoring_section["section_id"])
+
+    if len(sections) == 1:
+        sections.append(
+            {
+                "title": "人工复核提示",
+                "body": (
+                    f"No case-level PM3 conclusions with linked chunks were returned for `{query_variant}`. "
+                    "Review the source chunks and base findings before scoring."
+                ),
+                "evidence_ids": _all_valid_evidence_ids(valid_ids),
+            }
+        )
+    return sections
+
+
+def _base_markdown_evidence_sections(
+    base_result: dict[str, Any],
+    valid_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Copy the original Markdown Evidence blocks into the workflow result."""
+    title_map = {
+        "Query Variant Found in PaperText": "变异证据 / Variant Evidence",
+        "Query Variant's Intrans-variant Found in PaperText": "反式位点证据 / In-trans Evidence",
+        "Query Variant and Relative Intrans-variant / Genotype Found in PaperTables": "表格证据 / Table Evidence",
+        "Mutalyzer & Search Diagnostics": "检索诊断 / Search Diagnostics",
+    }
+    compact_titles = {
+        "Query Variant Found in PaperText",
+        "Query Variant's Intrans-variant Found in PaperText",
+    }
+
+    def compact_body(body: str, limit: int = 900) -> str:
+        body = _strip_model_reasoning(body)
+        lines = [line.strip() for line in str(body).splitlines() if line.strip()]
+        kept: list[str] = []
+        for line in lines:
+            lowered = line.lower()
+            if (
+                line.startswith("-")
+                or line.startswith("*")
+                or "yes" in lowered
+                or "none" in lowered
+                or "homozygous" in lowered
+                or "compound heterozygous" in lowered
+                or re.search(r"\bc\.\S+|\bp\.\S+", line)
+            ):
+                kept.append(line)
+            if len(kept) >= 4:
+                break
+        compacted = "\n".join(kept) if kept else str(body).strip()
+        if len(compacted) > limit:
+            compacted = compacted[: limit - 1].rstrip() + "…"
+        compacted = re.sub(r"(?m)^-\s+-\s+", "- ", compacted)
+        return compacted
+
+    sections: list[dict[str, Any]] = []
+    for section in base_result.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        copied = dict(section)
+        original_title = copied.get("title", "Untitled")
+        copied["title"] = title_map.get(original_title, original_title)
+        if original_title in compact_titles:
+            copied["body"] = compact_body(copied.get("body", ""))
+        copied["evidence_ids"] = _valid_evidence_ids(copied.get("evidence_ids"), valid_ids)
+        if (
+            original_title == "Query Variant and Relative Intrans-variant / Genotype Found in PaperTables"
+            and not copied["evidence_ids"]
+        ):
+            copied["evidence_ids"] = _all_valid_evidence_ids(valid_ids)
+        sections.append(copied)
+    return sections
+
+
+async def query_pm3_evidence_workflow(
+    query_variant,
+    markdown_path,
+    model_name_table,
+    model_name_text,
+    api_key=None,
+    api_url=None,
+):
+    """Run the Markdown evidence query and synthesize PM3 workflow conclusions.
+
+    This is a new, additive entry point used by the workflow page. The original
+    Markdown Evidence page continues to call ``query_variant_in_paper_xml``
+    directly and therefore keeps its existing behaviour.
+    """
+    base_result = await query_variant_in_paper_xml(
+        query_variant,
+        markdown_path,
+        model_name_table,
+        model_name_text,
+        api_key=api_key,
+        api_url=api_url,
+        include_evidence=True,
+        allow_markdown=True,
+    )
+    evidence = base_result.get("evidence", [])
+    valid_ids = {
+        item.get("id")
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if not valid_ids:
+        return _fallback_pm3_workflow_result(
+            query_variant=query_variant,
+            base_result=base_result,
+            reason="no linked evidence chunks were retrieved",
+        )
+
+    prompt = render_pm3_evidence_workflow(
+        query_variant=query_variant,
+        base_sections=base_result.get("sections", []),
+        evidence_chunks=evidence,
+    )
+    llm = _build_llm(model_name_text, api_key, api_url)
+    try:
+        async with _llm_semaphore:
+            response = await asyncio.wait_for(
+                llm.ainvoke(prompt),
+                timeout=300,
+            )
+        response_text = _strip_model_reasoning(getattr(response, "content", response))
+        workflow = _extract_json_object(str(response_text))
+    except Exception as exc:
+        return _fallback_pm3_workflow_result(
+            query_variant=query_variant,
+            base_result=base_result,
+            reason=str(exc),
+        )
+
+    workflow_sections = _build_pm3_workflow_sections(
+        workflow,
+        query_variant=query_variant,
+        valid_ids=valid_ids,
+    )
+    workflow_sections.extend(_base_markdown_evidence_sections(base_result, valid_ids))
+
+    return {
+        "title": "PM3 Evidence Workflow",
+        "sections": workflow_sections,
+        "evidence": evidence,
+        "document_markdown": base_result.get("document_markdown", ""),
+        "workflow_raw": workflow,
+        "base_result": base_result,
+    }
+
+
+async def translate_markdown_block_to_chinese(
+    title: str,
+    text: str,
+    model_name: str,
+    api_key=None,
+    api_url=None,
+) -> str:
+    """Translate one rendered output block to Chinese while preserving markers."""
+    _init_async_runtime()
+    prompt = render_chinese_translation(title=title, text=text)
+    llm = _build_llm(model_name, api_key, api_url)
+    async with _llm_semaphore:
+        response = await asyncio.wait_for(
+            llm.ainvoke(prompt),
+            timeout=180,
+        )
+    return _strip_model_reasoning(getattr(response, "content", response))
 
 
 def _format_deduped_lines(lines):
@@ -1121,7 +1747,7 @@ def _format_deduped_lines(lines):
 
 
 def format_mutalyzer_diagnostics(diag):
-    """Render Mutalyzer/search diagnostics as Markdown.
+    """Render Mutalyzer/search diagnostics as readable Markdown.
 
     This helper is imported by the OpenAI-compatible Streamlit page for its
     test/demo result. Keep it tolerant of missing keys so older result payloads
@@ -1131,11 +1757,21 @@ def format_mutalyzer_diagnostics(diag):
         value = diag.get(name, {})
         return value if isinstance(value, dict) else {}
 
-    def _val(value, fallback="`n/a`"):
+    def _val(value, fallback="n/a"):
         return value if value not in (None, "", []) else fallback
 
-    def _yn(value):
-        return "yes" if value else "no"
+    def _code(value, fallback="n/a"):
+        value = _val(value, fallback)
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value) or fallback
+        return f"`{value}`"
+
+    def _count(value):
+        return value if isinstance(value, int) else 0
+
+    def _found(matched, count):
+        count = _count(count)
+        return f"Found in {count} chunk{'s' if count != 1 else ''}" if matched else "Not found"
 
     m = _section("mutalyzer")
     dna = _section("dna_search")
@@ -1144,41 +1780,67 @@ def format_mutalyzer_diagnostics(diag):
     summ = _section("retriever_summary")
 
     status = m.get("status", "not_run")
+    mutalyzer_ok = status == "ok"
+    direct_matches = (
+        bool(dna.get("matched"))
+        or bool(prot.get("long_matched"))
+        or bool(prot.get("short_matched"))
+    )
+    fallback_used = bool(fb.get("triggered"))
+    retriever_ok = bool(summ.get("ok"))
+
+    if mutalyzer_ok and retriever_ok and direct_matches:
+        summary = "Mutalyzer normalized the variant, and the retriever found direct DNA/protein evidence in the paper."
+    elif mutalyzer_ok and retriever_ok and fallback_used:
+        summary = "Mutalyzer normalized the variant, but direct DNA/protein text was not found; the retriever used position-only fallback."
+    elif mutalyzer_ok:
+        summary = "Mutalyzer normalized the variant, but the retriever did not find matching evidence chunks."
+    else:
+        summary = "Mutalyzer did not return a usable protein change, so text search relied on the DNA variant and any fallback matches."
+
+    mutalyzer_status = "OK" if mutalyzer_ok else status
     if m.get("error"):
-        status = f"{status} - `{m.get('error')}`"
+        mutalyzer_status = f"{mutalyzer_status} ({m.get('error')})"
+
+    fallback_status = (
+        _found(fb.get("matched"), fb.get("chunk_count"))
+        if fallback_used
+        else "Not needed"
+    )
 
     lines = [
-        "### 1. Input",
-        f"- **HGVS variant:** `{_val(diag.get('input_hgvs'))}`",
-        f"- **DNA portion (search key):** `{_val(diag.get('var_dna'))}`",
+        "### Quick Read",
+        summary,
         "",
-        "### 2. Mutalyzer API call",
-        f"- **Endpoint:** `{_val(m.get('endpoint'))}`",
-        f"- **Status:** {status}",
-        f"- **Raw `protein.description`:** `{_val(m.get('raw_protein_description'))}`",
-        f"- **After stripping `p.()`:** `{_val(m.get('protein_after_p_strip'))}`",
+        "| Step | What happened |",
+        "| --- | --- |",
+        f"| Input variant | {_code(diag.get('input_hgvs'))} |",
+        f"| DNA search key | {_code(diag.get('var_dna'))} |",
+        f"| Mutalyzer | {mutalyzer_status} |",
+        f"| Final retrieval | {'Returned evidence chunks' if retriever_ok else 'No evidence chunks returned'} |",
         "",
-        "### 3. Transformations",
-        f"- Long protein form: `{_val(m.get('trimmed_long'))}`",
-        f"- Short protein form: `{_val(m.get('trimmed_short'))}`",
-        f"- Table-query position digits: `{_val(m.get('c_protein_id_digits'))}`",
+        "### Search Terms Used",
+        "| Term type | Term | Result |",
+        "| --- | --- | --- |",
+        f"| DNA | {_code(diag.get('var_dna'))} | {_found(dna.get('matched'), dna.get('chunk_count'))} |",
+        f"| Protein, long form | {_code(prot.get('long_form'))} | {_found(prot.get('long_matched'), prot.get('chunk_count_long'))} |",
+        f"| Protein, short form | {_code(prot.get('short_form'))} | {_found(prot.get('short_matched'), prot.get('chunk_count_short'))} |",
+        f"| Position-only fallback | {_code(fb.get('dna_pattern') or fb.get('protein_pattern'))} | {fallback_status} |",
         "",
-        "### 4. Search Patterns",
-        f"- DNA regex: `{_val(dna.get('regex_pattern'))}`",
-        f"- DNA matched chunks: **{dna.get('chunk_count', 0)}** ({_yn(dna.get('matched'))})",
-        f"- Protein long form: `{_val(prot.get('long_form'))}` - chunks: **{prot.get('chunk_count_long', 0)}** ({_yn(prot.get('long_matched'))})",
-        f"- Protein short form: `{_val(prot.get('short_form'))}` - chunks: **{prot.get('chunk_count_short', 0)}** ({_yn(prot.get('short_matched'))})",
+        "### Mutalyzer Translation",
+        f"- Mutalyzer returned protein: {_code(m.get('raw_protein_description'))}",
+        f"- Parsed protein change: {_code(m.get('protein_after_p_strip'))}",
+        f"- Searchable protein forms: {_code(m.get('trimmed_long'))} and {_code(m.get('trimmed_short'))}",
+        f"- Protein position used for table search: {_code(m.get('c_protein_id_digits'))}",
         "",
-        "### 5. Position Fallback",
-        f"- Triggered: {_yn(fb.get('triggered'))}",
-        f"- DNA position regex: `{_val(fb.get('dna_pattern'))}`",
-        f"- Protein position regex: `{_val(fb.get('protein_pattern'))}`",
-        f"- Matched chunks: **{fb.get('chunk_count', 0)}** ({_yn(fb.get('matched'))})",
+        "### Technical Details",
+        f"- Mutalyzer endpoint: {_code(m.get('endpoint'))}",
+        f"- DNA regex: {_code(dna.get('regex_pattern'))}",
+        f"- DNA fallback regex: {_code(fb.get('dna_pattern'))}",
+        f"- Protein fallback regex: {_code(fb.get('protein_pattern'))}",
+        f"- Total chunks returned to the LLM: **{_count(summ.get('total_chunks_returned'))}**",
         "",
-        "### 6. Retriever Summary",
-        f"- OK: {_yn(summ.get('ok'))}",
-        f"- Total chunks returned: **{summ.get('total_chunks_returned', 0)}**",
-        f"- Short-form protein observed: `{_val(summ.get('short_protein'))}`",
+        "Use the first two sections for the main interpretation. The technical details are mainly for debugging regex matching and Mutalyzer calls.",
     ]
     return "\n".join(lines)
 

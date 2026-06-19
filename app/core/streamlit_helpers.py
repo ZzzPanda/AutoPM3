@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import html as html_lib
 import os
 import shutil
 import tempfile
@@ -142,7 +143,11 @@ def extract_paper_content(paper_file: Any) -> str:
     return paper_path
 
 
-def render_result(result: Any) -> None:
+def render_result(
+    result: Any,
+    *,
+    section_body_renderer: Callable[[int, dict[str, Any]], None] | None = None,
+) -> None:
     """Render a structured result dict as a stack of expandable sections.
 
     Matches the contract used by the existing pages: result is ``{"title":
@@ -164,6 +169,7 @@ def render_result(result: Any) -> None:
             sections,
             evidence,
             document_markdown=result.get("document_markdown", ""),
+            section_body_renderer=section_body_renderer,
         )
         return
     for i, section in enumerate(sections):
@@ -176,7 +182,31 @@ def render_result(result: Any) -> None:
         # hierarchy either way.
         with st.expander(section["title"], expanded=True):
             st.markdown(f"## {section['title']}")
-            st.markdown(section["body"])
+            if section_body_renderer is None:
+                _render_section_body(section)
+            else:
+                section_body_renderer(i, section)
+
+
+def _render_section_body(section: dict[str, Any]) -> None:
+    if section.get("style") == "standardized":
+        body = html_lib.escape(str(section.get("body", ""))).replace("\n", "<br>")
+        st.markdown(
+            f"""
+            <div style="
+                border-left: 5px solid #2563eb;
+                background: #eff6ff;
+                color: #111827;
+                padding: 0.85rem 1rem;
+                border-radius: 6px;
+                line-height: 1.65;
+                margin-bottom: 0.75rem;
+            ">{body}</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+    st.markdown(section.get("body", ""))
 
 
 def _render_evidence_preview(evidence_item: dict[str, Any]) -> None:
@@ -228,6 +258,7 @@ def _render_result_with_evidence(
     sections: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
     document_markdown: str = "",
+    section_body_renderer: Callable[[int, dict[str, Any]], None] | None = None,
 ) -> None:
     ordered_evidence = [
         item
@@ -242,6 +273,15 @@ def _render_result_with_evidence(
     selected_key = "autopm3_selected_evidence_id"
     if st.session_state.get(selected_key) not in evidence_by_id:
         st.session_state[selected_key] = ordered_evidence[0]["id"]
+
+    def _select_evidence(evidence_id: str) -> None:
+        st.session_state[selected_key] = evidence_id
+
+    sections_by_id = {
+        section["section_id"]: section
+        for section in sections
+        if isinstance(section, dict) and section.get("section_id")
+    }
 
     st.markdown(
         """
@@ -280,39 +320,68 @@ def _render_result_with_evidence(
 
     with left:
         st.subheader("Conclusions")
-        for i, section in enumerate(sections):
-            evidence_ids = [
-                evidence_id
-                for evidence_id in section.get("evidence_ids", [])
-                if evidence_id in evidence_by_id
-            ]
-            label = section["title"]
-            if evidence_ids:
-                label = f"{label} · {len(evidence_ids)} chunk(s)"
-            with st.expander(label, expanded=True):
-                st.markdown(f"### {section['title']}")
-                st.markdown(section["body"])
+        conclusion_view = st.container(height=760, border=True)
+        with conclusion_view:
+            for i, section in enumerate(sections):
+                evidence_ids = [
+                    evidence_id
+                    for evidence_id in section.get("evidence_ids", [])
+                    if evidence_id in evidence_by_id
+                ]
+                label = section["title"]
                 if evidence_ids:
-                    st.caption("Linked source chunks")
-                    button_cols = st.columns(min(4, len(evidence_ids)))
-                    for j, evidence_id in enumerate(evidence_ids):
-                        item = evidence_by_id[evidence_id]
-                        chunk_label = item.get("title") or evidence_id
-                        if item.get("page"):
-                            chunk_label = f"{chunk_label} p.{item['page']}"
-                        with button_cols[j % len(button_cols)]:
-                            selected = st.session_state[selected_key] == evidence_id
-                            if st.button(
-                                f"{'Selected: ' if selected else ''}{chunk_label}",
-                                key=f"evidence-link-{i}-{j}-{evidence_id}",
-                                type="primary" if selected else "secondary",
-                                use_container_width=True,
-                                on_click=lambda value=evidence_id: st.session_state.__setitem__(
-                                    selected_key,
-                                    value,
-                                ),
-                            ):
-                                pass
+                    label = f"{label} · {len(evidence_ids)} chunk(s)"
+                with st.expander(label, expanded=True):
+                    st.markdown(f"### {section['title']}")
+                    if section_body_renderer is None:
+                        _render_section_body(section)
+                    else:
+                        section_body_renderer(i, section)
+                    linked_section_ids = [
+                        section_id
+                        for section_id in section.get("linked_section_ids", [])
+                        if section_id in sections_by_id
+                    ]
+                    if linked_section_ids:
+                        st.caption("关联证据块")
+                        linked_cols = st.columns(min(4, len(linked_section_ids)))
+                        for j, linked_section_id in enumerate(linked_section_ids):
+                            linked_section = sections_by_id[linked_section_id]
+                            linked_evidence_ids = [
+                                evidence_id
+                                for evidence_id in linked_section.get("evidence_ids", [])
+                                if evidence_id in evidence_by_id
+                            ]
+                            with linked_cols[j % len(linked_cols)]:
+                                button_kwargs = {
+                                    "key": f"section-link-{i}-{j}-{linked_section_id}",
+                                    "type": "secondary",
+                                    "use_container_width": True,
+                                    "disabled": not linked_evidence_ids,
+                                }
+                                if linked_evidence_ids:
+                                    button_kwargs["on_click"] = _select_evidence
+                                    button_kwargs["args"] = (linked_evidence_ids[0],)
+                                st.button(linked_section.get("title", linked_section_id), **button_kwargs)
+                    if evidence_ids:
+                        st.caption("Linked source chunks")
+                        button_cols = st.columns(min(4, len(evidence_ids)))
+                        for j, evidence_id in enumerate(evidence_ids):
+                            item = evidence_by_id[evidence_id]
+                            chunk_label = item.get("title") or evidence_id
+                            if item.get("page"):
+                                chunk_label = f"{chunk_label} p.{item['page']}"
+                            with button_cols[j % len(button_cols)]:
+                                selected = st.session_state[selected_key] == evidence_id
+                                if st.button(
+                                    f"{'Selected: ' if selected else ''}{chunk_label}",
+                                    key=f"evidence-link-{i}-{j}-{evidence_id}",
+                                    type="primary" if selected else "secondary",
+                                    use_container_width=True,
+                                    on_click=_select_evidence,
+                                    args=(evidence_id,),
+                                ):
+                                    pass
 
     with gutter:
         st.markdown(
@@ -327,25 +396,9 @@ def _render_result_with_evidence(
         )
 
     with right:
-        st.subheader("Markdown Source")
-        option_ids = [item["id"] for item in ordered_evidence]
-        selected_index = option_ids.index(st.session_state[selected_key])
-        selected_id = st.selectbox(
-            "Current chunk",
-            option_ids,
-            index=selected_index,
-            format_func=lambda evidence_id: evidence_by_id[evidence_id].get("title") or evidence_id,
-        )
-        st.session_state[selected_key] = selected_id
+        selected_id = st.session_state[selected_key]
         selected_item = evidence_by_id[selected_id]
-        related_sections = [
-            section["title"]
-            for section in sections
-            if selected_id in section.get("evidence_ids", [])
-        ]
-        if related_sections:
-            st.caption("Linked conclusions: " + " / ".join(related_sections))
-        st.markdown("#### Full Markdown")
+        st.subheader("Full Markdown")
         document_view = st.container(height=760, border=True)
         with document_view:
             if document_markdown:

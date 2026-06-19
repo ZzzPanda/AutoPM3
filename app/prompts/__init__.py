@@ -78,9 +78,37 @@ def render_table_extraction(*, idx: int, csv_content: str, query_text: str) -> s
     )
 
 
+def render_pm3_evidence_workflow(
+    *,
+    query_variant: str,
+    base_sections: list[dict],
+    evidence_chunks: list[dict],
+) -> str:
+    """Render the PM3 evidence workflow synthesis prompt.
+
+    This prompt is intentionally Jinja2-backed because it receives a variable
+    number of existing conclusions and evidence chunks.
+    """
+    return _JINJA_ENV.get_template("pm3_evidence_workflow.j2").render(
+        query_variant=query_variant,
+        base_sections=base_sections,
+        evidence_chunks=evidence_chunks,
+    )
+
+
+def render_chinese_translation(*, title: str, text: str) -> str:
+    """Render the prompt for per-section Chinese translation."""
+    return _JINJA_ENV.get_template("translate_to_chinese.j2").render(
+        title=title,
+        text=text,
+    )
+
+
 __all__ = [
     "PM3_ANSWER",
     "TABLE2TEXT",
     "TABLE_NTEXT_QA",
     "render_table_extraction",
+    "render_pm3_evidence_workflow",
+    "render_chinese_translation",
 ]
