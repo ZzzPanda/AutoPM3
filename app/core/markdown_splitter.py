@@ -376,6 +376,62 @@ def _hard_split(text: str, chunk_size: int) -> List[str]:
     return [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
+def _split_oversize_pipe_table(text: str, chunk_size: int) -> List[str]:
+    """Split a pipe-style markdown table that doesn't fit in a single chunk.
+
+    Each ``| ... |`` line is one row. Every emitted sub-chunk re-emits the
+    header and the ``|---|---|`` separator so it is independently
+    renderable as a partial table, and is prefixed with a
+    ``[rows N-M of K]`` marker so the original row range can be recovered.
+    No row is sliced mid-cell.
+    """
+    lines = [ln for ln in text.splitlines(keepends=True) if ln.strip()]
+    pipe_lines = [
+        ln for ln in lines
+        if ln.lstrip().startswith("|") and ln.rstrip().endswith("|") and ln.count("|") >= 2
+    ]
+    if len(pipe_lines) < 2:
+        return _hard_split(text, chunk_size)
+    header = pipe_lines[0]
+    separator = pipe_lines[1]
+    body_rows = pipe_lines[2:]
+    total = 2 + len(body_rows)  # header=1, separator=2, body rows 3..K
+
+    # Budget per sub-chunk = chunk_size minus the worst-case header/separator/
+    # marker overhead. Using worst-case (largest row-count digits) keeps the
+    # packer conservative; the actual emitted length is well under chunk_size.
+    marker_template_len = len(f"[rows 1-{total} of {total}]\n")
+    overhead = marker_template_len + len(header) + len(separator)
+    per_chunk_budget = max(1, chunk_size - overhead)
+
+    out: List[str] = []
+    cur_rows: List[str] = []
+    cur_len = 0
+    cur_start_row = 3  # first body row in this sub-chunk (1-based)
+    last_end_row = 2   # last body row already emitted in this sub-chunk
+
+    def _emit(end_row: int) -> None:
+        if not cur_rows:
+            return
+        marker = f"[rows {cur_start_row}-{end_row} of {total}]\n"
+        out.append(marker + header + separator + "".join(cur_rows))
+
+    for body_idx, row in enumerate(body_rows):
+        row_num = 3 + body_idx
+        if cur_rows and cur_len + len(row) > per_chunk_budget:
+            _emit(last_end_row)
+            cur_rows = [row]
+            cur_len = len(row)
+            cur_start_row = row_num
+            last_end_row = row_num
+        else:
+            cur_rows.append(row)
+            cur_len += len(row)
+            last_end_row = row_num
+    _emit(last_end_row)
+    return out
+
+
 def _pack_blocks(
     blocks: List[Block],
     chunk_size: int,
@@ -425,7 +481,7 @@ def _pack_blocks(
                 for t in sub_texts
             ]
         if block.kind == KIND_PIPE_TABLE:
-            sub_texts = _split_oversize_html_table(block.text, chunk_size)
+            sub_texts = _split_oversize_pipe_table(block.text, chunk_size)
             return [
                 Block(
                     kind=KIND_PIPE_TABLE,
