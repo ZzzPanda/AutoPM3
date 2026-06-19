@@ -287,6 +287,12 @@ def _render_result_with_evidence(
         for section in sections
         if isinstance(section, dict) and section.get("section_id")
     }
+    standardized_sections = [
+        section for section in sections if section.get("style") == "standardized"
+    ]
+    evidence_sections = [
+        section for section in sections if section.get("style") != "standardized"
+    ]
 
     st.markdown(
         """
@@ -323,91 +329,98 @@ def _render_result_with_evidence(
 
     left, gutter, right = st.columns([0.95, 0.035, 1.05], gap="large")
 
+    def _render_left_section(section: dict[str, Any], i: int) -> None:
+        is_focused_section = (
+            section.get("section_id")
+            and st.session_state.get(focused_section_key) == section.get("section_id")
+        )
+        evidence_ids = [
+            evidence_id
+            for evidence_id in section.get("evidence_ids", [])
+            if evidence_id in evidence_by_id
+        ]
+        label = section["title"]
+        if evidence_ids:
+            label = f"{label} · {len(evidence_ids)} chunk(s)"
+        if is_focused_section:
+            label = f"当前关联证据 · {label}"
+        with st.expander(label, expanded=True):
+            if is_focused_section:
+                st.markdown(
+                    """
+                    <div style="
+                        border-left: 5px solid #16a34a;
+                        background: #f0fdf4;
+                        color: #14532d;
+                        padding: 0.55rem 0.75rem;
+                        border-radius: 6px;
+                        margin-bottom: 0.75rem;
+                        font-weight: 600;
+                    ">当前从标准化结论跳转到此证据块；右侧已切换到对应 source chunk。</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            st.markdown(f"### {section['title']}")
+            if section_body_renderer is None:
+                _render_section_body(section)
+            else:
+                section_body_renderer(i, section)
+            linked_section_ids = [
+                section_id
+                for section_id in section.get("linked_section_ids", [])
+                if section_id in sections_by_id
+            ]
+            if linked_section_ids:
+                st.caption("关联证据块")
+                linked_cols = st.columns(min(4, len(linked_section_ids)))
+                for j, linked_section_id in enumerate(linked_section_ids):
+                    linked_section = sections_by_id[linked_section_id]
+                    linked_evidence_ids = [
+                        evidence_id
+                        for evidence_id in linked_section.get("evidence_ids", [])
+                        if evidence_id in evidence_by_id
+                    ]
+                    with linked_cols[j % len(linked_cols)]:
+                        button_kwargs = {
+                            "key": f"section-link-{i}-{j}-{linked_section_id}",
+                            "type": "secondary",
+                            "use_container_width": True,
+                            "disabled": not linked_evidence_ids,
+                        }
+                        if linked_evidence_ids:
+                            button_kwargs["on_click"] = _select_linked_section
+                            button_kwargs["args"] = (linked_section_id, linked_evidence_ids[0])
+                        st.button(linked_section.get("title", linked_section_id), **button_kwargs)
+            if evidence_ids:
+                st.caption("Linked source chunks")
+                button_cols = st.columns(min(4, len(evidence_ids)))
+                for j, evidence_id in enumerate(evidence_ids):
+                    item = evidence_by_id[evidence_id]
+                    chunk_label = item.get("title") or evidence_id
+                    if item.get("page"):
+                        chunk_label = f"{chunk_label} p.{item['page']}"
+                    with button_cols[j % len(button_cols)]:
+                        selected = st.session_state[selected_key] == evidence_id
+                        if st.button(
+                            f"{'Selected: ' if selected else ''}{chunk_label}",
+                            key=f"evidence-link-{i}-{j}-{evidence_id}",
+                            type="primary" if selected else "secondary",
+                            use_container_width=True,
+                            on_click=_select_evidence,
+                            args=(evidence_id,),
+                        ):
+                            pass
+
     with left:
-        st.subheader("Conclusions")
+        st.subheader("Standardized Conclusion")
+        for i, section in enumerate(standardized_sections):
+            _render_left_section(section, i)
+
+        st.subheader("Evidence")
         conclusion_view = st.container(height=760, border=True)
         with conclusion_view:
-            for i, section in enumerate(sections):
-                is_focused_section = (
-                    section.get("section_id")
-                    and st.session_state.get(focused_section_key) == section.get("section_id")
-                )
-                evidence_ids = [
-                    evidence_id
-                    for evidence_id in section.get("evidence_ids", [])
-                    if evidence_id in evidence_by_id
-                ]
-                label = section["title"]
-                if evidence_ids:
-                    label = f"{label} · {len(evidence_ids)} chunk(s)"
-                if is_focused_section:
-                    label = f"当前关联证据 · {label}"
-                with st.expander(label, expanded=True):
-                    if is_focused_section:
-                        st.markdown(
-                            """
-                            <div style="
-                                border-left: 5px solid #16a34a;
-                                background: #f0fdf4;
-                                color: #14532d;
-                                padding: 0.55rem 0.75rem;
-                                border-radius: 6px;
-                                margin-bottom: 0.75rem;
-                                font-weight: 600;
-                            ">当前从标准化结论跳转到此证据块；右侧已切换到对应 source chunk。</div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                    st.markdown(f"### {section['title']}")
-                    if section_body_renderer is None:
-                        _render_section_body(section)
-                    else:
-                        section_body_renderer(i, section)
-                    linked_section_ids = [
-                        section_id
-                        for section_id in section.get("linked_section_ids", [])
-                        if section_id in sections_by_id
-                    ]
-                    if linked_section_ids:
-                        st.caption("关联证据块")
-                        linked_cols = st.columns(min(4, len(linked_section_ids)))
-                        for j, linked_section_id in enumerate(linked_section_ids):
-                            linked_section = sections_by_id[linked_section_id]
-                            linked_evidence_ids = [
-                                evidence_id
-                                for evidence_id in linked_section.get("evidence_ids", [])
-                                if evidence_id in evidence_by_id
-                            ]
-                            with linked_cols[j % len(linked_cols)]:
-                                button_kwargs = {
-                                    "key": f"section-link-{i}-{j}-{linked_section_id}",
-                                    "type": "secondary",
-                                    "use_container_width": True,
-                                    "disabled": not linked_evidence_ids,
-                                }
-                                if linked_evidence_ids:
-                                    button_kwargs["on_click"] = _select_linked_section
-                                    button_kwargs["args"] = (linked_section_id, linked_evidence_ids[0])
-                                st.button(linked_section.get("title", linked_section_id), **button_kwargs)
-                    if evidence_ids:
-                        st.caption("Linked source chunks")
-                        button_cols = st.columns(min(4, len(evidence_ids)))
-                        for j, evidence_id in enumerate(evidence_ids):
-                            item = evidence_by_id[evidence_id]
-                            chunk_label = item.get("title") or evidence_id
-                            if item.get("page"):
-                                chunk_label = f"{chunk_label} p.{item['page']}"
-                            with button_cols[j % len(button_cols)]:
-                                selected = st.session_state[selected_key] == evidence_id
-                                if st.button(
-                                    f"{'Selected: ' if selected else ''}{chunk_label}",
-                                    key=f"evidence-link-{i}-{j}-{evidence_id}",
-                                    type="primary" if selected else "secondary",
-                                    use_container_width=True,
-                                    on_click=_select_evidence,
-                                    args=(evidence_id,),
-                                ):
-                                    pass
+            for i, section in enumerate(evidence_sections, start=len(standardized_sections)):
+                _render_left_section(section, i)
 
     with gutter:
         st.markdown(
