@@ -293,6 +293,11 @@ def _render_result_with_evidence(
     evidence_sections = [
         section for section in sections if section.get("style") != "standardized"
     ]
+    section_index_by_id = {
+        section["section_id"]: i
+        for i, section in enumerate(sections)
+        if isinstance(section, dict) and section.get("section_id")
+    }
 
     st.markdown(
         """
@@ -330,6 +335,7 @@ def _render_result_with_evidence(
     left, gutter, right = st.columns([0.95, 0.035, 1.05], gap="large")
 
     def _render_left_section(section: dict[str, Any], i: int) -> None:
+        section_key = section.get("section_id") or f"section-{i}"
         is_focused_section = (
             section.get("section_id")
             and st.session_state.get(focused_section_key) == section.get("section_id")
@@ -382,7 +388,7 @@ def _render_result_with_evidence(
                     ]
                     with linked_cols[j % len(linked_cols)]:
                         button_kwargs = {
-                            "key": f"section-link-{i}-{j}-{linked_section_id}",
+                            "key": f"section-link-{section_key}-{j}-{linked_section_id}",
                             "type": "secondary",
                             "use_container_width": True,
                             "disabled": not linked_evidence_ids,
@@ -403,7 +409,7 @@ def _render_result_with_evidence(
                         selected = st.session_state[selected_key] == evidence_id
                         if st.button(
                             f"{'Selected: ' if selected else ''}{chunk_label}",
-                            key=f"evidence-link-{i}-{j}-{evidence_id}",
+                            key=f"evidence-link-{section_key}-{j}-{evidence_id}",
                             type="primary" if selected else "secondary",
                             use_container_width=True,
                             on_click=_select_evidence,
@@ -417,9 +423,28 @@ def _render_result_with_evidence(
             _render_left_section(section, i)
 
         st.subheader("Evidence")
+        focused_section_id = st.session_state.get(focused_section_key)
+        if focused_section_id:
+            focused_sections = [
+                section
+                for section in evidence_sections
+                if section.get("section_id") == focused_section_id
+            ]
+            other_sections = [
+                section
+                for section in evidence_sections
+                if section.get("section_id") != focused_section_id
+            ]
+            ordered_evidence_sections = focused_sections + other_sections
+            focused_section = sections_by_id.get(focused_section_id)
+            if focused_section:
+                st.caption(f"当前关联证据：{focused_section.get('title', focused_section_id)}")
+        else:
+            ordered_evidence_sections = evidence_sections
         conclusion_view = st.container(height=760, border=True)
         with conclusion_view:
-            for i, section in enumerate(evidence_sections, start=len(standardized_sections)):
+            for section in ordered_evidence_sections:
+                i = section_index_by_id.get(section.get("section_id"), 0)
                 _render_left_section(section, i)
 
     with gutter:
