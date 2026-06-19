@@ -645,28 +645,11 @@ def extract_tables_from_markdown(markdown_text: str) -> list[pd.DataFrame]:
 
 
 
-def split_docs(documents,chunk_size=1500,chunk_overlap=100):
-# Responsible for splitting the documents into several chunks
-    
-    # Initializing the RecursiveCharacterTextSplitter with
-    # chunk_size and chunk_overlap
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap
-    )
-    
-    # Splitting the documents into chunks
-    chunks = text_splitter.split_documents(documents=documents)
-    for i, chunk in enumerate(chunks, start=1):
-        chunk.metadata = {
-            **(chunk.metadata or {}),
-            "chunk_index": i,
-            "chunk_size": chunk_size,
-            "chunk_overlap": chunk_overlap,
-        }
-    
-    # returning the document chunks
-    return chunks
+# Re-export the markdown-aware ``split_docs`` so existing imports in
+# ``app.core.query`` keep working. Markdown papers route to the block-aware
+# chunker (atomic HTML tables, heading propagation); plain text (XML paper
+# dumps) routes to the LangChain fallback inside ``_markdown_split_docs``.
+split_docs = _markdown_split_docs
 
 
 def _normalize_chunk_text(text: str, max_chars: int = 1800) -> str:
@@ -898,7 +881,21 @@ async def query_variant_in_paper_xml(
         else load_xml_paper(paper_fn, filter_tables=True)
     )
     doc_wrapper = [Document(page_content=doc_filtered, metadata={'source': 'local'})]
-    doc_chunks = split_docs(doc_wrapper)
+    # Markdown papers benefit from a larger chunk window so the Case 1/2/3
+    # HTML table (~1.4 KB on PMID 23689641) lands in one chunk instead of
+    # being sliced across the paragraph boundary. XML paper text is plain
+    # paragraphs (no HTML/heading/pipe tables) so the dispatcher in
+    # ``split_docs`` already routes it to the LangChain fallback; bumping
+    # chunk_size there doesn't change behaviour.
+    if is_markdown_input:
+        effective_chunk_size, effective_chunk_overlap = 1800, 200
+    else:
+        effective_chunk_size, effective_chunk_overlap = 1500, 100
+    doc_chunks = split_docs(
+        doc_wrapper,
+        chunk_size=effective_chunk_size,
+        chunk_overlap=effective_chunk_overlap,
+    )
     # Try our custom retriever
     variant_retriever = VariantSpecificRetriever(
         documents=doc_chunks,

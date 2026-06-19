@@ -271,10 +271,15 @@ def _render_result_with_evidence(
         return
 
     selected_key = "autopm3_selected_evidence_id"
+    focused_section_key = "autopm3_focused_section_id"
     if st.session_state.get(selected_key) not in evidence_by_id:
         st.session_state[selected_key] = ordered_evidence[0]["id"]
 
     def _select_evidence(evidence_id: str) -> None:
+        st.session_state[selected_key] = evidence_id
+
+    def _select_linked_section(section_id: str, evidence_id: str) -> None:
+        st.session_state[focused_section_key] = section_id
         st.session_state[selected_key] = evidence_id
 
     sections_by_id = {
@@ -323,6 +328,10 @@ def _render_result_with_evidence(
         conclusion_view = st.container(height=760, border=True)
         with conclusion_view:
             for i, section in enumerate(sections):
+                is_focused_section = (
+                    section.get("section_id")
+                    and st.session_state.get(focused_section_key) == section.get("section_id")
+                )
                 evidence_ids = [
                     evidence_id
                     for evidence_id in section.get("evidence_ids", [])
@@ -331,7 +340,24 @@ def _render_result_with_evidence(
                 label = section["title"]
                 if evidence_ids:
                     label = f"{label} · {len(evidence_ids)} chunk(s)"
+                if is_focused_section:
+                    label = f"当前关联证据 · {label}"
                 with st.expander(label, expanded=True):
+                    if is_focused_section:
+                        st.markdown(
+                            """
+                            <div style="
+                                border-left: 5px solid #16a34a;
+                                background: #f0fdf4;
+                                color: #14532d;
+                                padding: 0.55rem 0.75rem;
+                                border-radius: 6px;
+                                margin-bottom: 0.75rem;
+                                font-weight: 600;
+                            ">当前从标准化结论跳转到此证据块；右侧已切换到对应 source chunk。</div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
                     st.markdown(f"### {section['title']}")
                     if section_body_renderer is None:
                         _render_section_body(section)
@@ -360,8 +386,8 @@ def _render_result_with_evidence(
                                     "disabled": not linked_evidence_ids,
                                 }
                                 if linked_evidence_ids:
-                                    button_kwargs["on_click"] = _select_evidence
-                                    button_kwargs["args"] = (linked_evidence_ids[0],)
+                                    button_kwargs["on_click"] = _select_linked_section
+                                    button_kwargs["args"] = (linked_section_id, linked_evidence_ids[0])
                                 st.button(linked_section.get("title", linked_section_id), **button_kwargs)
                     if evidence_ids:
                         st.caption("Linked source chunks")
