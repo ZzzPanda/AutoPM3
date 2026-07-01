@@ -21,42 +21,39 @@ AutoPM3's manucript describing its algorithms and results were published at [Bio
 
 ## Project Layout
 
-> **Note:** This repo's top-level layout was restructured from the original single-folder layout (where source `.py` files, `Dockerfile`, data, and docs all sat side-by-side at the root). Python code now lives under `app/`, runtime data under `data/`, Docker under `docker/`, credentials under `config/`, and the benchmark + internal docs each got their own folder. See [DEPLOY.md](DEPLOY.md) for the full deployment guide.
+> **Note:** The repo is split into two self-contained subprojects at the root — `pm3_streamlit/` (the original Python / Streamlit release) and `pm3_bun/` (a parallel Bun + Vue rewrite of the same product with a Postgres-backed Fastify backend). Pick one to run; they are **not** interoperable. The root only holds shared assets (README, docs, benchmark dataset, license).
 
 ```
 AutoPM3/
-├── app/                       # All Python source (the installable package)
-│   ├── main.py                # Streamlit entry — DeepSeek page
-│   ├── pages/                 # Other Streamlit pages (e.g. OpenAI-Compatible)
-│   ├── core/                  # Core logic: query engine, table extraction, utils
-│   ├── data_io/               # Offline scripts (e.g. download_papers.py)
-│   └── mineru/                # MinerU API client (PDF → structured text)
+├── pm3_streamlit/             # Python / Streamlit implementation (this is the released paper version)
+│   ├── app/                   # Streamlit multi-page app
+│   ├── tests/                 # pytest suite
+│   ├── data/, config/         # Runtime data + credential templates
+│   ├── docker/, scripts/      # Dockerfile, compose, versioned image builder
+│   ├── .streamlit/            # Real secrets.toml (gitignored)
+│   ├── .dockerignore          # Must sit at the build-context root
+│   ├── pyproject.toml, requirements.txt
+│   ├── README.md              # Subproject entry — read this if you only care about the Python build
+│   └── DEPLOY.md              # Full Python-side deployment + Docker + scripts/build.sh
 │
-├── data/                      # Runtime data files
-│   ├── protein.txt            # Protein-symbol mapping (loaded by app/core/query.py)
-│   ├── xml_papers/            # Output of `python -m app.data_io.download_papers` (gitignored)
-│   └── pdf_convert/           # MinerU conversion samples
+├── pm3_bun/                   # Bun / Node implementation (Fastify backend + Vue/Vite frontend)
+│   ├── server/                # Fastify + Postgres + MinIO + MinerU worker
+│   ├── web/                   # Vue 3 + Vite + TypeScript frontend
+│   ├── docker-compose.storage.yml  # Postgres(5433) + MinIO(9010) for the server
+│   ├── package.json, package-lock.json
+│   └── README.md              # Subproject entry — read this if you only care about the Bun build
 │
-├── benchmarks/                # PM3-Bench evaluation dataset + tutorial
-│
+├── benchmarks/                # PM3-Bench evaluation dataset + tutorial (shared)
 ├── docs/                      # Internal docs (architecture, dev plans, meeting notes, images)
-│
-├── scripts/build.sh           # Versioned Docker build helper (OCI labels, semver tags)
-│
-├── docker/                    # Dockerfile + docker-compose.yml
-│
-├── config/                    # Credential templates (`.env.example`, `secrets.toml.example`)
-│                             #  — copy to `config/.env` / `.streamlit/secrets.toml` to use
-│
-├── DEPLOY.md                  # How to run locally + Docker + `scripts/build.sh`
-├── requirements.txt
-└── README.md
+├── README.md / README.zh.md
+├── LICENSE / TODO.md / plan.md
+└── .gitignore / .dockerignore / .claude/
 ```
 
-**Key path conventions** (see [DEPLOY.md §0](DEPLOY.md#0-项目结构速览) for the full list):
-- Run from the **project root** — `streamlit run app/main.py`, `python -m app.core.query`, etc.
-- The real `secrets.toml` lives at **`.streamlit/secrets.toml`** (Streamlit's default lookup path); the template is in `config/.streamlit/secrets.toml.example`.
-- The Docker build context is the **project root** (not `docker/`); `scripts/build.sh` resolves it from the script's own location so it works from any CWD.
+**Key path conventions** (see [pm3_streamlit/DEPLOY.md](pm3_streamlit/DEPLOY.md) for the full Python-side list):
+- **Python / Streamlit**: all commands run **from inside `pm3_streamlit/`** (`cd pm3_streamlit`, then `streamlit run app/main.py`).
+- **Bun / Node**: all commands run **from inside `pm3_bun/`** (`cd pm3_bun`, then `npm install` + `npm run dev:server` / `npm run dev:web`).
+- Docker build context for the Python image is **`pm3_streamlit/`** (so `.dockerignore` lives there too).
 
 ---
 
@@ -65,6 +62,7 @@ AutoPM3/
 - [Project Layout](#project-layout)
 - [Latest Updates](#latest-updates)
 - [Online Demo](#online-demo)
+- [Subprojects](#subprojects)
 - [Installations](#installation)
     - [Dependency Installation](#dependency-installation)
     - [Ollama Setup](#using-ollama-to-host-llms)
@@ -80,9 +78,18 @@ AutoPM3/
 ---
 ## Online Demo
 * Check out our online demo: [AutoPM3-demo](https://www.bio8.cs.hku.hk/autopm3-demo/). Please note, due to limited computing resources, we recommend deploying AutoPM3 locally to avoid long queuing times.
+
+## Subprojects
+* **Python / Streamlit** — the paper-aligned implementation. See [pm3_streamlit/README.md](pm3_streamlit/README.md) and [pm3_streamlit/DEPLOY.md](pm3_streamlit/DEPLOY.md) for local-run, Docker, and image-build instructions.
+* **Bun / Node** — a parallel Fastify + Vue rewrite. See [pm3_bun/README.md](pm3_bun/README.md).
+
+The rest of this README documents the **Python / Streamlit** subproject (the one in the paper). For the Bun/Node build, follow the link above.
+
 ## Installation
+> All commands below are run from inside `pm3_streamlit/`.
 ### Dependency Installation
 ```bash
+cd pm3_streamlit
 conda create -n AutoPM3 python=3.10
 conda activate AutoPM3
 pip3 install -r requirements.txt
@@ -139,6 +146,7 @@ ollama pull llama3:70B
 
 * Step 1. Launch the local web-server:
 ```bash
+cd pm3_streamlit
 streamlit run app/main.py
 ```
 * Step 2. Copy the following `http://localhost:8501` to the brower and start to use.
@@ -147,10 +155,12 @@ streamlit run app/main.py
 
 * Check the help of `app.core.query`
 ```bash
+cd pm3_streamlit
 python -m app.core.query -h
 ```
-* The example of running python scripts: 
+* The example of running python scripts:
 ```bash
+cd pm3_streamlit
 python -m app.core.query
 --query_variant "NM_004004.5:c.516G>C" ## HVGS format query variant
 --paper_path ./data/xml_papers/20201936.xml ## paper path.

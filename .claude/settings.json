@@ -8,7 +8,29 @@
       "Bash(docker --version)",
       "Bash(docker compose *)",
       "Bash(lsof -nP -iTCP:5177 -sTCP:LISTEN)",
-      "Bash(lsof -nP -iTCP:5173 -sTCP:LISTEN)"
+      "Bash(lsof -nP -iTCP:5173 -sTCP:LISTEN)",
+      "Bash(git mv *)",
+      "Bash(rm -rf apps __pycache__ .pytest_cache node_modules && rm -f autopm3-*.tar testmode_model_trace.png && echo \"CLEAN DONE\" && git status --short | head -30)",
+      "Bash(python3 -c \"from app.core.query import PROTEIN_MAPPING_FILE; print\\('OK:', PROTEIN_MAPPING_FILE\\)\")",
+      "Bash(python3 -c \"import app.main\")",
+      "Bash(python3 -m pytest -q)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import app.main; import app.pages\")",
+      "Bash(timeout 15 streamlit run app/main.py --server.port 8501 --server.headless true --browser.gatherUsageStats false)",
+      "Bash(curl -sS -o /tmp/st_health.txt -w \"HTTP %{http_code}\\\\n\" http://localhost:8501/_stcore/health)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code}\\\\n\" http://localhost:8501/)",
+      "Bash(pkill -f \"streamlit run app/main.py\")",
+      "Bash(wait)",
+      "Bash(npm install *)",
+      "Bash(lsof -nP -iTCP:5433 -sTCP:LISTEN)",
+      "Bash(lsof -nP -iTCP:5432 -sTCP:LISTEN)",
+      "Bash(env)",
+      "Bash(pkill -f \"node server/main.js\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(lsof -nP -iTCP:3017 -sTCP:LISTEN)"
+    ],
+    "additionalDirectories": [
+      "/Users/roger/Documents/GitHub/AutoPM3"
     ]
   }
 }

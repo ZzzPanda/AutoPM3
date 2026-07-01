@@ -21,42 +21,39 @@ AutoPM3 的算法与结果描述已发表在 [Bioinformatics](https://academic.o
 
 ## 项目结构
 
-> **说明**：本仓库的顶层目录结构做过一次重构，原版是单层布局（源 `.py` 文件、`Dockerfile`、数据、文档全部平铺在根目录）。现在 Python 源码统一在 `app/`、运行期数据在 `data/`、Docker 相关在 `docker/`、凭据在 `config/`，基准评测和内部文档也各自有了独立目录。完整部署指南见 [DEPLOY.md](DEPLOY.md)。
+> **说明**：本仓库根目录现在被拆成两个独立的子项目：`pm3_streamlit/`（Python / Streamlit，对应论文中的实现）和 `pm3_bun/`（Bun + Vue 同一产品的重写版，后端用 Fastify + Postgres）。**两者互不兼容**，按需选一个跑。根目录只保留共享资源（README、docs、benchmark 数据集、license）。
 
 ```
 AutoPM3/
-├── app/                       # 全部 Python 源码（可安装的包）
-│   ├── main.py                # Streamlit 入口——DeepSeek 页面
-│   ├── pages/                 # 其它 Streamlit 页面（如 OpenAI 兼容页面）
-│   ├── core/                  # 核心逻辑：查询引擎、表格抽取、工具函数
-│   ├── data_io/               # 离线脚本（如 download_papers.py）
-│   └── mineru/                # MinerU API 客户端（PDF → 结构化文本）
+├── pm3_streamlit/             # Python / Streamlit 实现（论文对应版本）
+│   ├── app/                   # Streamlit 多页面应用
+│   ├── tests/                 # pytest 套件
+│   ├── data/, config/         # 运行期数据 + 凭据模板
+│   ├── docker/, scripts/      # Dockerfile、compose、版本化镜像构建脚本
+│   ├── .streamlit/            # 真实 secrets.toml（已 gitignore）
+│   ├── .dockerignore          # 必须位于 build context 根
+│   ├── pyproject.toml, requirements.txt
+│   ├── README.md              # 子项目入口——只关心 Python 版看这里
+│   └── DEPLOY.md              # 完整的 Python 侧部署 + Docker + scripts/build.sh
 │
-├── data/                      # 运行期数据文件
-│   ├── protein.txt            # 蛋白缩写映射（由 app/core/query.py 加载）
-│   ├── xml_papers/            # `python -m app.data_io.download_papers` 的输出（已 gitignore）
-│   └── pdf_convert/           # MinerU 转换示例
+├── pm3_bun/                   # Bun / Node 实现（Fastify 后端 + Vue/Vite 前端）
+│   ├── server/                # Fastify + Postgres + MinIO + MinerU worker
+│   ├── web/                   # Vue 3 + Vite + TypeScript 前端
+│   ├── docker-compose.storage.yml  # Postgres(5433) + MinIO(9010) for the server
+│   ├── package.json, package-lock.json
+│   └── README.md              # 子项目入口——只关心 Bun 版看这里
 │
-├── benchmarks/                # PM3-Bench 评测数据集 + 使用说明
-│
+├── benchmarks/                # PM3-Bench 评测数据集 + 使用说明（共享）
 ├── docs/                      # 内部文档（架构图、开发计划、会议纪要、图片）
-│
-├── scripts/build.sh           # 版本化 Docker 构建脚本（OCI 标签、semver tag）
-│
-├── docker/                    # Dockerfile + docker-compose.yml
-│
-├── config/                    # 凭据模板（`.env.example`、`secrets.toml.example`）
-│                             #  —— 复制为 `config/.env` / `.streamlit/secrets.toml` 后使用
-│
-├── DEPLOY.md                  # 本地运行 + Docker + `scripts/build.sh` 全流程
-├── requirements.txt
-└── README.md
+├── README.md / README.zh.md
+├── LICENSE / TODO.md / plan.md
+└── .gitignore / .dockerignore / .claude/
 ```
 
-**关键路径约定**（完整列表见 [DEPLOY.md §0](DEPLOY.md#0-项目结构速览)）：
-- 命令都在 **项目根** 下执行——`streamlit run app/main.py`、`python -m app.core.query` 等。
-- 真实的 `secrets.toml` 放在 **`.streamlit/secrets.toml`**（Streamlit 默认搜索路径），模板在 `config/.streamlit/secrets.toml.example`。
-- Docker 的 build context 是 **项目根**（不是 `docker/`）；`scripts/build.sh` 从脚本自身位置解析项目根，所以从任何 CWD 跑都能找对。
+**关键路径约定**（Python 侧完整列表见 [pm3_streamlit/DEPLOY.md](pm3_streamlit/DEPLOY.md)）：
+- **Python / Streamlit**：所有命令都在 `pm3_streamlit/` 内执行（`cd pm3_streamlit` 后 `streamlit run app/main.py`）。
+- **Bun / Node**：所有命令都在 `pm3_bun/` 内执行（`cd pm3_bun` 后 `npm install` + `npm run dev:server` / `npm run dev:web`）。
+- Python 镜像的 Docker build context 是 **`pm3_streamlit/`**（因此 `.dockerignore` 也在那里）。
 
 ---
 
@@ -65,6 +62,7 @@ AutoPM3/
 - [项目结构](#项目结构)
 - [最新更新](#最新更新)
 - [在线 Demo](#在线-demo)
+- [子项目](#子项目)
 - [安装](#安装)
     - [依赖安装](#依赖安装)
     - [使用 Ollama 托管 LLM](#使用-ollama-托管-llm)
@@ -80,9 +78,18 @@ AutoPM3/
 ---
 ## 在线 Demo
 * 在线体验：[AutoPM3-demo](https://www.bio8.cs.hku.hk/autopm3-demo/)。请注意，由于算力资源有限，建议本地部署 AutoPM3 以避免长时间排队。
+
+## 子项目
+* **Python / Streamlit** — 论文中对应的实现版本。详见 [pm3_streamlit/README.md](pm3_streamlit/README.md) 与 [pm3_streamlit/DEPLOY.md](pm3_streamlit/DEPLOY.md) — 本地运行、Docker、镜像构建都在这里。
+* **Bun / Node** — 同一产品的 Fastify + Vue 重写版。详见 [pm3_bun/README.md](pm3_bun/README.md)。
+
+本文档余下部分只介绍 **Python / Streamlit** 子项目（论文对应版本）。要看 Bun/Node 版请走上面的链接。
+
 ## 安装
+> 下面所有命令都在 `pm3_streamlit/` 内执行。
 ### 依赖安装
 ```bash
+cd pm3_streamlit
 conda create -n AutoPM3 python=3.10
 conda activate AutoPM3
 pip3 install -r requirements.txt
@@ -139,6 +146,7 @@ ollama pull llama3:70B
 
 * 第 1 步：启动本地 Web 服务：
 ```bash
+cd pm3_streamlit
 streamlit run app/main.py
 ```
 * 第 2 步：把 `http://localhost:8501` 复制到浏览器，开始使用。
@@ -147,10 +155,12 @@ streamlit run app/main.py
 
 * 查看 `app.core.query` 的帮助：
 ```bash
+cd pm3_streamlit
 python -m app.core.query -h
 ```
 * 运行 Python 脚本的示例：
 ```bash
+cd pm3_streamlit
 python -m app.core.query
 --query_variant "NM_004004.5:c.516G>C" ## HVGS 格式的查询变异
 --paper_path ./data/xml_papers/20201936.xml ## 文献路径
