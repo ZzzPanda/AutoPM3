@@ -16,6 +16,7 @@ from app.core.streamlit_helpers import (
     config_value,
     extract_paper_content,
     render_result,
+    render_testmode_model_trace,
     run_async_query,
 )
 
@@ -57,3 +58,5 @@ if st.button('Run', type='primary', key='run_xml'):
             st.code(traceback.format_exc())
     else:
         st.write('Please enter variant and upload XML.')
+
+render_testmode_model_trace()

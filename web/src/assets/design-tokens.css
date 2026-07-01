@@ -1,0 +1,19 @@
+:root {
+  --primary-500: #38C793;
+  --primary-700: #288D68;
+  --primary-800: #1F6D51;
+  --primary-50: #EBFAF4;
+  --primary-100: #D7F4E9;
+  --n900: #111625;
+  --n800: #1C2434;
+  --n500: #596881;
+  --n400: #8796AF;
+  --n300: #C5CFDD;
+  --n200: #DEE4EE;
+  --n100: #EFF3F8;
+  --n50: #F7F9FB;
+  --n0: #FFFFFF;
+  --warning: #F2AE40;
+  --shadow-card: 0 1px 2px rgba(17, 22, 37, .04);
+  --shadow-pop: 0 8px 24px rgba(17, 22, 37, .12);
+}

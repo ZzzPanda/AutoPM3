@@ -16,7 +16,9 @@ from app.core.streamlit_helpers import (
     config_value,
     extract_paper_content,
     render_result,
+    render_testmode_model_trace,
     run_async_query,
+    set_testmode_fake_model_trace,
 )
 
 
@@ -295,7 +297,10 @@ if run_clicked:
         st.write("Please enter API URL, model name, API key, variant and upload Markdown.")
 
 if test_clicked:
+    set_testmode_fake_model_trace()
     st.session_state["markdown_evidence_result"] = _build_fake_result()
 
 if st.session_state.get("markdown_evidence_result"):
     render_result(st.session_state["markdown_evidence_result"])
+
+render_testmode_model_trace()

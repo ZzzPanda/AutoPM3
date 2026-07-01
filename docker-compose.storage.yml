@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: autopm3_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autopm3
+    ports:
+      - "5433:5432"
+    volumes:
+      - autopm3_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autopm3"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: autopm3_minio
+    entrypoint: >
+      sh -c '
+        minio server /data --console-address ":9001" &
+        SERVER_PID=$$!
+        until mc alias set local http://localhost:9000 admin admin123 2>/dev/null; do sleep 0.5; done
+        mc mb local/autopm3 2>/dev/null || true
+        mc anonymous set download local/autopm3 2>/dev/null || true
+        wait $$SERVER_PID
+      '
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - autopm3_miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  autopm3_pgdata:
+  autopm3_miniodata:

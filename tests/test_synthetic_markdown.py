@@ -222,17 +222,14 @@ def test_image_atomic(image_heavy_md):
 def test_only_tables_no_paragraphs(only_tables_md):
     chunks = markdown_aware_split(only_tables_md, chunk_size=600, chunk_overlap=50)
     kinds = [c.metadata["chunk_kind"] for c in chunks]
-    # Every chunk should be classified as a table. The first chunk may be
-    # a paragraph carrying the leading "# Only tables" heading — that's the
-    # only exception we allow, since the test fixture starts with a heading.
+    # After Bug 2 (heading-as-own-block fix), the leading "# Only tables"
+    # heading is its own paragraph block, so the first chunk may be
+    # KIND_PARAGRAPH. Every other chunk should be a table (or a split
+    # oversize table sub-piece).
     table_kinds = {KIND_HTML_TABLE, KIND_PARAGRAPH_SPLIT}
-    paragraph_lead = (
-        kinds[:1] == [KIND_PARAGRAPH]
-        and all(k in table_kinds for k in kinds[1:])
-    )
-    non_table = [k for k in kinds if k not in table_kinds]
-    if paragraph_lead:
-        non_table = [k for k in kinds[1:] if k not in table_kinds]
+    non_table = [k for k in kinds[1:] if k not in table_kinds]
+    if kinds and kinds[0] not in table_kinds and kinds[0] != KIND_PARAGRAPH:
+        non_table = [kinds[0]] + non_table
     assert not non_table, (
         f"only-tables doc produced non-table chunks: {non_table}; "
         f"full kinds: {kinds}"

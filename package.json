@@ -1,0 +1,19 @@
+{
+  "name": "autopm3-platform",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:server": "node server/main.js",
+    "dev:web": "cd web && npm run dev",
+    "build:web": "cd web && npm run build"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.8.5",
+    "pdf-parse": "^2.4.5",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
+  }
+}

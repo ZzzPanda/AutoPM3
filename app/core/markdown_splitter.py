@@ -59,12 +59,10 @@ class Block:
     source_heading: Optional[str] = None
     start: int = 0
     end: int = 0
-
-
-@dataclass
-class _HeadingHit:
-    text: str
-    line: int
+    # True iff this block is the overlap-tail seed re-prepended to the next
+    # chunk's buffer. Metadata derivation skips seed blocks so
+    # ``block_count`` only reflects real content blocks.
+    is_overlap_seed: bool = False
 
 
 _HTML_TABLE_OPEN_RE = re.compile(r"^\s*<table[\s>]", re.IGNORECASE)
@@ -73,6 +71,24 @@ _HTML_ROW_CLOSE_RE = re.compile(r"</tr\s*>", re.IGNORECASE)
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 _IMAGE_RE = re.compile(r"^!\[.*\]\(.*\)\s*$")
 _FENCE_OPEN_RE = re.compile(r"^\s*(```|~~~)")
+
+
+def _snap_to_word_boundary(tail: str, search_window: int = 50) -> str:
+    """Move ``tail`` forward to the next whitespace so the seed starts on a
+    word boundary instead of mid-word.
+
+    ``search_window`` bounds how far we look — if no whitespace is found
+    within the first ``search_window`` characters, return ``tail`` unchanged.
+    This prevents pathological long-token source (a single 200-char word)
+    from collapsing the entire seed to nothing.
+    """
+    if not tail:
+        return ""
+    limit = min(search_window, len(tail))
+    for i in range(limit):
+        if tail[i].isspace():
+            return tail[i + 1:].lstrip()
+    return tail
 
 
 def _looks_like_markdown(text: str) -> bool:
@@ -175,11 +191,14 @@ def _parse_blocks(text: str) -> List[Block]:
         )
 
     # Paragraph run — blank line terminates. A leading heading is captured
-    # but still included in the block text so round-trip recovery succeeds.
-    def _collect_paragraph(start: int) -> Block:
+    # but emitted as its own block (NOT folded into the paragraph body) so
+    # that when the body exceeds chunk_size, RecursiveCharacterTextSplitter
+    # doesn't slice the heading off as a 15-char orphan chunk.
+    def _collect_paragraph(start: int) -> List[Block]:
         nonlocal current_heading
         body: List[str] = []
         leading_heading_line: Optional[str] = None
+        leading_heading_text: Optional[str] = None
         j = start
         while j < n:
             line = lines[j]
@@ -189,26 +208,41 @@ def _parse_blocks(text: str) -> List[Block]:
             m = _HEADING_RE.match(line)
             if m and not body and leading_heading_line is None:
                 # Heading at the very start of a paragraph slot — record
-                # it (so the line is not silently dropped) and update
-                # current_heading; then continue collecting the paragraph
-                # body that follows.
+                # it and update current_heading; then continue collecting
+                # the paragraph body that follows. We do NOT fold the
+                # heading into the body text; we emit it as its own block.
                 leading_heading_line = line
-                current_heading = m.group(2).strip()
+                leading_heading_text = m.group(2).strip()
+                current_heading = leading_heading_text
                 j += 1
                 while j < n and lines[j].strip() == "":
                     j += 1
                 continue
             body.append(line)
             j += 1
+        out: List[Block] = []
         if leading_heading_line is not None:
-            body.insert(0, leading_heading_line)
-        return Block(
-            kind=KIND_PARAGRAPH,
-            text="".join(body),
-            source_heading=current_heading,
-            start=start,
-            end=j,
+            # Standalone heading block — its source_heading is itself so the
+            # chunk metadata reflects "this is the H2 line".
+            out.append(
+                Block(
+                    kind=KIND_PARAGRAPH,
+                    text=leading_heading_line,
+                    source_heading=leading_heading_text,
+                    start=start,
+                    end=start + 1,
+                )
+            )
+        out.append(
+            Block(
+                kind=KIND_PARAGRAPH,
+                text="".join(body),
+                source_heading=current_heading,
+                start=start,
+                end=j,
+            )
         )
+        return out
 
     while i < n:
         line = lines[i]
@@ -299,15 +333,15 @@ def _parse_blocks(text: str) -> List[Block]:
                 i += 1
                 continue
             current_heading = heading_text
-            blk = _collect_paragraph(i)
-            blocks.append(blk)
-            i = blk.end
+            blk_list = _collect_paragraph(i)
+            blocks.extend(blk_list)
+            i = blk_list[-1].end
             continue
 
         # Plain paragraph.
-        blk = _collect_paragraph(i)
-        blocks.append(blk)
-        i = blk.end
+        blk_list = _collect_paragraph(i)
+        blocks.extend(blk_list)
+        i = blk_list[-1].end
 
     return blocks
 
@@ -449,22 +483,32 @@ def _pack_blocks(
     buffer_len = 0
     prev_paragraph_tail: str = ""  # overlap seed for the next paragraph chunk
 
-    def flush() -> None:
+    def flush(is_final: bool = False) -> None:
         nonlocal buffer, buffer_len, prev_paragraph_tail
         if not buffer:
             return
+
+        # We previously trimmed the trailing block here and prepended the
+        # tail as an overlap seed on the next chunk. That produced a
+        # subtle information-loss bug: when the next block was itself
+        # oversize (and got LangChain-split into sub-pieces), the seed
+        # was attached to the WRONG sub-piece — the seed's content
+        # belonged to the PREVIOUS chunk's trailing block, not the
+        # current block. Sentence "Enzymatic activity is likely altered"
+        # lost both "likely" and "three-dimensional" when the seed
+        # attached to the next oversize block's first sub-piece
+        # (chunk boundary fell mid-sentence).
+        #
+        # The simpler and safer model is: never trim, never seed at the
+        # buffer level. Overlap is supplied entirely by LangChain's
+        # internal splitter when an oversize block is decomposed (we
+        # pass ``chunk_overlap=chunk_overlap`` to ``RecursiveCharacterTextSplitter``).
+        # For paragraph→paragraph boundaries inside the same buffer
+        # flush, chunks have no overlap — that's an acceptable trade-off
+        # for guaranteed no information loss.
+        prev_paragraph_tail = ""
+
         text = "".join(b.text for b in buffer)
-        # Compute overlap seed BEFORE constructing the doc, using only the
-        # trailing paragraph block of the just-flushed buffer.
-        trailing_paragraph = ""
-        for b in reversed(buffer):
-            if b.kind in (KIND_PARAGRAPH, KIND_PARAGRAPH_SPLIT, KIND_IMAGE):
-                trailing_paragraph = b.text
-                break
-        if trailing_paragraph and chunk_overlap > 0:
-            prev_paragraph_tail = trailing_paragraph[-chunk_overlap:]
-        else:
-            prev_paragraph_tail = ""
         packed.append((text, list(buffer)))
         buffer = []
         buffer_len = 0
@@ -490,7 +534,15 @@ def _pack_blocks(
                 )
                 for t in sub_texts
             ]
-        # paragraph / fence / image — defer to LangChain.
+        # paragraph / fence / image — defer to LangChain. We keep the
+        # user-supplied ``chunk_overlap`` here (do NOT force it to 0)
+        # because LangChain's internal overlap is what guarantees no
+        # content is dropped at the boundary between adjacent sub-pieces
+        # of the same oversize block. The buffer-level overlap seed
+        # (managed by ``flush()``) covers a complementary case: the
+        # boundary between one block's last sub-piece and the next
+        # block's first sub-piece. Disabling either causes silent
+        # information loss at that class of boundary.
         sub_texts = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
@@ -538,24 +590,10 @@ def _pack_blocks(
         # Paragraph / image block.
         if buffer and buffer_len + len(block.text) > chunk_size:
             flush()
-        # Seed the new chunk with overlap tail if any.
-        if prev_paragraph_tail and not buffer and block.kind in (
-            KIND_PARAGRAPH,
-            KIND_PARAGRAPH_SPLIT,
-            KIND_IMAGE,
-        ):
-            buffer.append(
-                Block(
-                    kind=KIND_PARAGRAPH,
-                    text=prev_paragraph_tail,
-                    source_heading=block.source_heading,
-                )
-            )
-            buffer_len = len(prev_paragraph_tail)
         buffer.append(block)
         buffer_len += len(block.text)
 
-    flush()
+    flush(is_final=True)
     return packed
 
 
@@ -633,34 +671,25 @@ def markdown_aware_split(
         # block in the buffer. The first block is often the overlap-seed
         # paragraph (a synthetic KIND_PARAGRAPH carrying prev_tail), so we
         # skip those when looking for a meaningful heading.
+        # source_heading: prefer the MOST RECENT (last) heading the chunk
+        # carries. The first-block-wins logic was wrong because a chunk
+        # crossing a section boundary (e.g. trailing paragraph from
+        # "Results" + heading block for "Mutation analysis") used to
+        # report the older section. Walking in reverse picks up the new
+        # heading that the chunk actually transitions INTO.
         source_heading = None
-        for b in packed_blocks:
+        for b in reversed(packed_blocks):
             if b.source_heading is not None:
                 source_heading = b.source_heading
                 break
         if source_heading is None and packed_blocks:
-            source_heading = packed_blocks[0].source_heading
+            source_heading = packed_blocks[-1].source_heading
 
         # block_count: number of real (non-overlap-seed) blocks in the chunk.
-        # The overlap seed is always a single synthetic paragraph block
-        # whose source_heading was already set by the previous chunk, so we
-        # exclude blocks whose source_heading matches the chunk's heading
-        # AND whose text is short (the seed is exactly chunk_overlap chars).
-        # In practice the seed is rare and a simple length filter works.
-        chunk_overlap_text = packed_blocks[0].text if packed_blocks else ""
-        # The overlap seed is a block with empty source_heading and length
-        # <= chunk_overlap. Filter those out so block_count reflects the
-        # number of *content* blocks packed.
-        real_blocks = [
-            b for b in packed_blocks
-            if not (
-                b.source_heading is None
-                and len(b.text) <= chunk_overlap
-                and b is not packed_blocks[-1]
-            )
-        ]
-        if not real_blocks:
-            real_blocks = packed_blocks
+        # The overlap seed is flagged explicitly via ``Block.is_overlap_seed``
+        # in ``_pack_blocks``, so we filter by flag rather than by length
+        # heuristic.
+        real_blocks = [b for b in packed_blocks if not b.is_overlap_seed] or packed_blocks
 
         metadata = {
             "source": source,

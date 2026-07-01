@@ -15,7 +15,13 @@ from langchain_core.retrievers import BaseRetriever
 
 from app.core.table_functions import table_extraction_with_deepseek
 from app.core.utils import extractTablesFromXML
-from app.prompts import PM3_ANSWER, render_chinese_translation, render_pm3_evidence_workflow
+from app.core.model_trace import trace_ainvoke
+from app.prompts import (
+    PM3_ANSWER,
+    render_chinese_translation,
+    render_pm3_evidence_workflow,
+    render_pm3_paper_intake,
+)
 
 # Markdown-aware chunker. For markdown papers (e.g. MinerU output) this
 # keeps HTML ``<table>...</table>`` blocks atomic instead of slicing them
@@ -1077,7 +1083,17 @@ async def query_variant_in_paper_xml(
             try:
                 async with _llm_semaphore:
                     response = await asyncio.wait_for(
-                        chain.ainvoke({"query": variant_hgvs}),
+                        trace_ainvoke(
+                            label=f"text {'variant' if query_type == VARIANT_QUERY else 'in-trans'} query",
+                            model_name=model_name_text,
+                            input_payload={
+                                "query": variant_hgvs,
+                                "current_variant": current_variant,
+                                "proposedQuestion": predefined_query,
+                                "source_documents": [doc.page_content for doc in docs],
+                            },
+                            awaitable=chain.ainvoke({"query": variant_hgvs}),
+                        ),
                         timeout=LLM_TIMEOUT_SECONDS,
                     )
                 return {
@@ -1654,7 +1670,12 @@ async def query_pm3_evidence_workflow(
     try:
         async with _llm_semaphore:
             response = await asyncio.wait_for(
-                llm.ainvoke(prompt),
+                trace_ainvoke(
+                    label="pm3 evidence workflow",
+                    model_name=model_name_text,
+                    input_payload=prompt,
+                    awaitable=llm.ainvoke(prompt),
+                ),
                 timeout=300,
             )
         response_text = _strip_model_reasoning(getattr(response, "content", response))
@@ -1683,6 +1704,286 @@ async def query_pm3_evidence_workflow(
     }
 
 
+def _score_pm3_intake_doc(doc: Document) -> int:
+    text = doc.page_content.lower()
+    score = 0
+    weighted_terms = {
+        "case": 4,
+        "patient": 4,
+        "proband": 4,
+        "family": 3,
+        "compound heterozyg": 6,
+        "homozyg": 5,
+        "heterozyg": 4,
+        "segregation": 5,
+        "parent": 4,
+        "paternal": 4,
+        "maternal": 4,
+        "trans": 4,
+        "cis": 3,
+        "genotype": 4,
+        "mutation": 3,
+        "variant": 3,
+        "phenotype": 2,
+        "table": 2,
+        "<table": 6,
+    }
+    for term, weight in weighted_terms.items():
+        if term in text:
+            score += weight
+    score += min(12, len(re.findall(r"\bc\.[A-Za-z0-9_*.+\-–>]+", doc.page_content)) * 3)
+    score += min(8, len(re.findall(r"\bp\.[A-Za-z0-9_*.+\-–>]+", doc.page_content)) * 2)
+    score += min(6, len(re.findall(r"\brs\d+\b", doc.page_content, flags=re.IGNORECASE)) * 2)
+    return score
+
+
+def _pm3_intake_candidate_docs(markdown_text: str, *, limit: int = 14) -> list[Document]:
+    docs = split_docs(
+        [Document(page_content=markdown_text, metadata={"source": "local"})],
+        chunk_size=1800,
+        chunk_overlap=200,
+    )
+    ranked = [
+        (idx, _score_pm3_intake_doc(doc), doc)
+        for idx, doc in enumerate(docs)
+    ]
+    selected = [
+        doc
+        for _idx, score, doc in sorted(ranked, key=lambda item: (-item[1], item[0]))
+        if score > 0
+    ][:limit]
+    if selected:
+        return selected
+    return docs[: min(limit, len(docs))]
+
+
+def _intake_item_section(
+    *,
+    title: str,
+    item: dict[str, Any],
+    valid_ids: set[str],
+    fields: list[tuple[str, str]],
+    section_id: str | None = None,
+) -> Optional[dict[str, Any]]:
+    evidence_ids = _valid_evidence_ids(item.get("evidence_ids"), valid_ids)
+    if not evidence_ids:
+        return None
+    lines = [f"**Conclusion:** {_string_value(item.get('conclusion'))}", ""]
+    for label, key in fields:
+        lines.append(f"- **{label}:** {_string_value(item.get(key))}")
+    section = {
+        "title": title,
+        "body": "\n".join(lines),
+        "evidence_ids": evidence_ids,
+    }
+    if section_id:
+        section["section_id"] = section_id
+    return section
+
+
+def _build_pm3_intake_sections(
+    intake: dict[str, Any],
+    *,
+    valid_ids: set[str],
+) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    summary = intake.get("paper_summary")
+    if isinstance(summary, dict):
+        section = _intake_item_section(
+            title="论文 PM3 信息概览",
+            item=summary,
+            valid_ids=valid_ids,
+            fields=[
+                ("Disease/phenotype", "disease_or_phenotype"),
+                ("Gene/locus", "gene_or_locus"),
+                ("Study type", "study_type"),
+                ("PM3 readiness", "pm3_readiness"),
+            ],
+            section_id="paper-summary",
+        )
+        if section:
+            sections.append(section)
+
+    for idx, item in enumerate(intake.get("candidate_variants", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        variant = _string_value(item.get("variant"), f"Variant {idx}")
+        section = _intake_item_section(
+            title=f"候选变异 {idx}: {variant}",
+            item={"conclusion": item.get("why_candidate"), **item},
+            valid_ids=valid_ids,
+            fields=[
+                ("Variant", "variant"),
+                ("Protein change", "protein_change"),
+                ("Gene", "gene"),
+                ("Transcript", "transcript"),
+                ("Case IDs", "case_ids"),
+                ("Zygosity/context", "zygosity_or_context"),
+                ("Second allele/partner", "second_allele_or_partner"),
+                ("Next variant input", "needs_user_variant_input"),
+            ],
+            section_id=f"candidate-variant-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    for idx, item in enumerate(intake.get("candidate_cases", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        case_id = _string_value(item.get("case_id"), f"Case {idx}")
+        section = _intake_item_section(
+            title=f"候选病例证据 {idx}: {case_id}",
+            item=item,
+            valid_ids=valid_ids,
+            fields=[
+                ("Source", "source_type"),
+                ("Disease/phenotype", "disease_or_phenotype"),
+                ("Genotype", "genotype"),
+                ("Variants", "variants"),
+                ("Zygosity/phase", "zygosity_or_phase"),
+                ("Author interpretation", "author_interpretation"),
+                ("PM3 usefulness", "pm3_usefulness"),
+            ],
+            section_id=f"candidate-case-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    for idx, item in enumerate(intake.get("family_evidence", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        family_id = _string_value(item.get("family_id"), f"Family {idx}")
+        section = _intake_item_section(
+            title=f"候选家系/相位证据 {idx}: {family_id}",
+            item=item,
+            valid_ids=valid_ids,
+            fields=[
+                ("Parents tested", "parents_tested"),
+                ("Parental genotypes", "parental_genotypes"),
+                ("Siblings/relatives", "siblings_or_relatives"),
+                ("Phase/trans support", "phase_or_trans_support"),
+            ],
+            section_id=f"candidate-family-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    for idx, item in enumerate(intake.get("deduplication_clues", []), start=1):
+        if not isinstance(item, dict):
+            continue
+        section = _intake_item_section(
+            title=f"去重线索 {idx}",
+            item=item,
+            valid_ids=valid_ids,
+            fields=[("Status", "status")],
+            section_id=f"candidate-dedupe-{idx}",
+        )
+        if section:
+            sections.append(section)
+
+    next_steps = intake.get("next_steps")
+    if isinstance(next_steps, dict):
+        section = _intake_item_section(
+            title="下一步：补充 Variant 后运行 PM3",
+            item=next_steps,
+            valid_ids=valid_ids,
+            fields=[("Suggested variant inputs", "suggested_variant_inputs")],
+            section_id="next-steps",
+        )
+        if section:
+            sections.append(section)
+
+    if not sections:
+        sections.append(
+            {
+                "title": "论文 PM3 信息概览",
+                "body": "No PM3-ready candidate information was extracted. Review the linked chunks manually.",
+                "evidence_ids": _all_valid_evidence_ids(valid_ids),
+                "section_id": "paper-summary",
+            }
+        )
+    return sections
+
+
+async def query_pm3_paper_intake(
+    markdown_path,
+    model_name,
+    api_key=None,
+    api_url=None,
+):
+    """Extract PM3-useful paper information before the user enters a variant."""
+    _init_async_runtime()
+    markdown_text = load_markdown_paper(markdown_path)
+    docs = _pm3_intake_candidate_docs(markdown_text)
+    evidence_by_id: dict[str, dict[str, Any]] = {}
+    for doc in docs:
+        _append_unique_evidence(
+            evidence_by_id,
+            [doc],
+            reason="PM3 intake candidate chunk: variants, genotype, case, family, or phase context",
+            query_variant="paper-intake",
+        )
+    evidence = list(evidence_by_id.values())
+    valid_ids = {
+        item.get("id")
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if not evidence:
+        return {
+            "title": "PM3 Paper Intake",
+            "sections": [
+                {
+                    "title": "论文 PM3 信息概览",
+                    "body": "No candidate chunks were found in this Markdown paper.",
+                    "evidence_ids": [],
+                }
+            ],
+            "evidence": [],
+            "document_markdown": markdown_text,
+            "intake_raw": None,
+        }
+
+    prompt = render_pm3_paper_intake(evidence_chunks=evidence)
+    llm = _build_llm(model_name, api_key, api_url)
+    try:
+        async with _llm_semaphore:
+            response = await asyncio.wait_for(
+                trace_ainvoke(
+                    label="pm3 paper intake",
+                    model_name=model_name,
+                    input_payload=prompt,
+                    awaitable=llm.ainvoke(prompt),
+                ),
+                timeout=300,
+            )
+        response_text = _strip_model_reasoning(getattr(response, "content", response))
+        intake = _extract_json_object(str(response_text))
+        sections = _build_pm3_intake_sections(intake, valid_ids=valid_ids)
+    except Exception as exc:
+        intake = None
+        sections = [
+            {
+                "title": "论文 PM3 信息概览",
+                "body": (
+                    "Automatic paper intake did not complete. Review the linked "
+                    f"candidate chunks manually before choosing a target variant.\n\n"
+                    f"Error: {exc}"
+                ),
+                "evidence_ids": _all_valid_evidence_ids(valid_ids),
+                "section_id": "paper-summary",
+            }
+        ]
+
+    return {
+        "title": "PM3 Paper Intake",
+        "sections": sections,
+        "evidence": evidence,
+        "document_markdown": markdown_text,
+        "intake_raw": intake,
+    }
+
+
 async def translate_markdown_block_to_chinese(
     title: str,
     text: str,
@@ -1696,7 +1997,12 @@ async def translate_markdown_block_to_chinese(
     llm = _build_llm(model_name, api_key, api_url)
     async with _llm_semaphore:
         response = await asyncio.wait_for(
-            llm.ainvoke(prompt),
+            trace_ainvoke(
+                label="translate block to chinese",
+                model_name=model_name,
+                input_payload=prompt,
+                awaitable=llm.ainvoke(prompt),
+            ),
             timeout=180,
         )
     return _strip_model_reasoning(getattr(response, "content", response))

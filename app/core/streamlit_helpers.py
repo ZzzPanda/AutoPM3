@@ -35,12 +35,16 @@ import asyncio
 import atexit
 import html as html_lib
 import os
+import re
 import shutil
 import tempfile
+import textwrap
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
+
+from app.core.model_trace import clear_model_trace, get_model_trace, is_model_trace_enabled
 
 # Streamlit is intentionally an optional import so the helpers module can be
 # imported (and the cleanup sweep can run) during CLI / tests where Streamlit
@@ -147,6 +151,7 @@ def render_result(
     result: Any,
     *,
     section_body_renderer: Callable[[int, dict[str, Any]], None] | None = None,
+    key_prefix: str = "autopm3",
 ) -> None:
     """Render a structured result dict as a stack of expandable sections.
 
@@ -170,6 +175,7 @@ def render_result(
             evidence,
             document_markdown=result.get("document_markdown", ""),
             section_body_renderer=section_body_renderer,
+            key_prefix=key_prefix,
         )
         return
     for i, section in enumerate(sections):
@@ -251,6 +257,12 @@ def _render_markdown_document_with_highlight(
             st.markdown(after, unsafe_allow_html=True)
         return
 
+    _render_evidence_preview(selected_item)
+    st.caption(
+        "Selected chunk is shown above. It could not be matched back to an exact "
+        "position in the full Markdown, so the full document is shown below."
+    )
+    st.divider()
     st.markdown(document_markdown, unsafe_allow_html=True)
 
 
@@ -259,6 +271,7 @@ def _render_result_with_evidence(
     evidence: list[dict[str, Any]],
     document_markdown: str = "",
     section_body_renderer: Callable[[int, dict[str, Any]], None] | None = None,
+    key_prefix: str = "autopm3",
 ) -> None:
     ordered_evidence = [
         item
@@ -270,8 +283,9 @@ def _render_result_with_evidence(
         st.info("No linked chunks were returned for this result.")
         return
 
-    selected_key = "autopm3_selected_evidence_id"
-    focused_section_key = "autopm3_focused_section_id"
+    safe_prefix = re.sub(r"[^A-Za-z0-9_-]+", "-", key_prefix).strip("-") or "autopm3"
+    selected_key = f"{safe_prefix}_selected_evidence_id"
+    focused_section_key = f"{safe_prefix}_focused_section_id"
     if st.session_state.get(selected_key) not in evidence_by_id:
         st.session_state[selected_key] = ordered_evidence[0]["id"]
 
@@ -297,6 +311,11 @@ def _render_result_with_evidence(
         section["section_id"]: i
         for i, section in enumerate(sections)
         if isinstance(section, dict) and section.get("section_id")
+    }
+    section_index_by_object = {
+        id(section): i
+        for i, section in enumerate(sections)
+        if isinstance(section, dict)
     }
 
     st.markdown(
@@ -388,7 +407,7 @@ def _render_result_with_evidence(
                     ]
                     with linked_cols[j % len(linked_cols)]:
                         button_kwargs = {
-                            "key": f"section-link-{section_key}-{j}-{linked_section_id}",
+                            "key": f"{safe_prefix}-section-link-{section_key}-{j}-{linked_section_id}",
                             "type": "secondary",
                             "use_container_width": True,
                             "disabled": not linked_evidence_ids,
@@ -409,7 +428,7 @@ def _render_result_with_evidence(
                         selected = st.session_state[selected_key] == evidence_id
                         if st.button(
                             f"{'Selected: ' if selected else ''}{chunk_label}",
-                            key=f"evidence-link-{section_key}-{j}-{evidence_id}",
+                            key=f"{safe_prefix}-evidence-link-{section_key}-{j}-{evidence_id}",
                             type="primary" if selected else "secondary",
                             use_container_width=True,
                             on_click=_select_evidence,
@@ -418,9 +437,10 @@ def _render_result_with_evidence(
                             pass
 
     with left:
-        st.subheader("Standardized Conclusion")
-        for i, section in enumerate(standardized_sections):
-            _render_left_section(section, i)
+        if standardized_sections:
+            st.subheader("Standardized Conclusion")
+            for i, section in enumerate(standardized_sections):
+                _render_left_section(section, i)
 
         st.subheader("Evidence")
         focused_section_id = st.session_state.get(focused_section_key)
@@ -444,7 +464,10 @@ def _render_result_with_evidence(
         conclusion_view = st.container(height=760, border=True)
         with conclusion_view:
             for section in ordered_evidence_sections:
-                i = section_index_by_id.get(section.get("section_id"), 0)
+                i = section_index_by_id.get(
+                    section.get("section_id"),
+                    section_index_by_object.get(id(section), 0),
+                )
                 _render_left_section(section, i)
 
     with gutter:
@@ -497,15 +520,177 @@ def run_async_query(async_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> 
     except RuntimeError:
         running = None
 
-    if running is None:
-        return asyncio.run(async_fn(*args, **kwargs))
+    clear_model_trace()
+    trace_for_session: list[dict[str, Any]] | None = None
+    try:
+        if running is None:
+            return asyncio.run(async_fn(*args, **kwargs))
 
-    # Already in a loop — fall back to a worker thread with a fresh loop.
-    def _runner() -> Any:
-        return asyncio.run(async_fn(*args, **kwargs))
+        # Already in a loop — fall back to a worker thread with a fresh loop.
+        def _runner() -> tuple[Any, list[dict[str, Any]], BaseException | None]:
+            clear_model_trace()
+            try:
+                result = asyncio.run(async_fn(*args, **kwargs))
+                return result, get_model_trace(), None
+            except BaseException as exc:
+                return None, get_model_trace(), exc
 
-    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="autopm3-async") as ex:
-        return ex.submit(_runner).result()
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="autopm3-async") as ex:
+            result, trace_for_session, exc = ex.submit(_runner).result()
+            if exc is not None:
+                raise exc
+            return result
+    finally:
+        if st is not None:
+            st.session_state["autopm3_model_trace"] = (
+                trace_for_session if trace_for_session is not None else get_model_trace()
+            )
+
+
+def _clip_debug_text(text: Any, limit: int = 6000) -> str:
+    value = "" if text is None else str(text)
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + f"\n... [showing first {limit} chars]"
+
+
+def set_testmode_fake_model_trace() -> None:
+    """Populate a deterministic fake trace for TEST_MODE layout checks."""
+    if st is None or not is_model_trace_enabled():
+        return
+
+    now = time.time()
+    st.session_state["autopm3_model_trace"] = [
+        {
+            "label": "paper intake candidate extraction",
+            "model_name": "gpt-4o-mini",
+            "input": "Extract PM3-ready candidate variants from linked Markdown chunks.",
+            "started_at": now,
+            "duration_ms": 840.0,
+            "output": '{"candidate_variants": [{"variant": "NM_017739.1:c.1319T>G"}]}',
+            "error": None,
+        },
+        {
+            "label": "table extraction 1",
+            "model_name": "gpt-4o-mini",
+            "input": "CSV table with genotype rows for Case 1, Case 2, Case 3.",
+            "started_at": now + 0.22,
+            "duration_ms": 1280.0,
+            "output": "Case 1 mentions c.1319T>G / p.L440R and c.1896-1G>C.",
+            "error": None,
+        },
+        {
+            "label": "pm3 evidence workflow",
+            "model_name": "gpt-4o-mini",
+            "input": "Synthesize standardized PM3 conclusion from evidence chunks.",
+            "started_at": now + 1.7,
+            "duration_ms": 960.0,
+            "output": '{"standardized_conclusion": "needs manual review"}',
+            "error": None,
+        },
+    ]
+
+
+def render_testmode_model_trace() -> None:
+    """Render the TEST_MODE model-call waterfall at the bottom of a page."""
+    if st is None or not is_model_trace_enabled():
+        return
+
+    events = st.session_state.get("autopm3_model_trace", [])
+    st.divider()
+    st.markdown("### TESTMODE · Model Call Waterfall")
+    if not events:
+        st.caption("No model calls recorded in this run.")
+        return
+
+    starts = [float(event.get("started_at") or 0.0) for event in events]
+    first_start = min(starts)
+    last_end = max(
+        float(event.get("started_at") or first_start)
+        + (float(event.get("duration_ms") or 0.0) / 1000.0)
+        for event in events
+    )
+    total_ms = max((last_end - first_start) * 1000.0, 1.0)
+    sum_ms = sum(float(event.get("duration_ms") or 0.0) for event in events)
+    st.caption(
+        f"{len(events)} model calls · wall time {total_ms / 1000:.2f}s · summed model time {sum_ms / 1000:.2f}s"
+    )
+
+    rows = []
+    for idx, event in enumerate(events, start=1):
+        start_ms = (float(event.get("started_at") or first_start) - first_start) * 1000.0
+        duration_ms = float(event.get("duration_ms") or 0.0)
+        left_pct = max(0.0, min(96.0, start_ms / total_ms * 100.0))
+        width_pct = max(2.0, min(100.0 - left_pct, duration_ms / total_ms * 100.0))
+        label = html_lib.escape(str(event.get("label") or f"call {idx}"))
+        model = html_lib.escape(str(event.get("model_name") or "unknown"))
+        status_color = "#ef4444" if event.get("error") else "#2563eb"
+        rows.append(
+            f'<div class="autopm3-trace-row">'
+            f'<div class="autopm3-trace-meta">#{idx} · {label}<br>'
+            f'<span>{model} · +{start_ms:.0f}ms · {duration_ms:.0f}ms</span></div>'
+            f'<div class="autopm3-trace-track">'
+            f'<div class="autopm3-trace-bar" style="left:{left_pct:.2f}%; width:{width_pct:.2f}%; background:{status_color};"></div>'
+            f'</div></div>'
+        )
+    trace_html = textwrap.dedent(
+        f"""
+        <style>
+        .autopm3-trace-row {{
+            display: grid;
+            grid-template-columns: minmax(180px, 280px) 1fr;
+            gap: 0.75rem;
+            align-items: center;
+            margin: 0.45rem 0;
+        }}
+        .autopm3-trace-meta {{
+            font-size: 0.82rem;
+            line-height: 1.25;
+            color: #111827;
+            overflow-wrap: anywhere;
+        }}
+        .autopm3-trace-meta span {{
+            color: #6b7280;
+        }}
+        .autopm3-trace-track {{
+            position: relative;
+            height: 1.05rem;
+            border-radius: 5px;
+            background: #f3f4f6;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }}
+        .autopm3-trace-bar {{
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            border-radius: 4px;
+        }}
+        @media (max-width: 768px) {{
+            .autopm3-trace-row {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+        </style>
+        {''.join(rows)}
+        """
+    ).strip()
+    st.markdown(
+        trace_html,
+        unsafe_allow_html=True,
+    )
+
+    for idx, event in enumerate(events, start=1):
+        label = event.get("label") or f"call {idx}"
+        duration_ms = float(event.get("duration_ms") or 0.0)
+        status = "error" if event.get("error") else "ok"
+        with st.expander(f"#{idx} {label} · {duration_ms:.0f}ms · {status}", expanded=False):
+            if event.get("error"):
+                st.error(event["error"])
+            st.markdown("**Input**")
+            st.code(_clip_debug_text(event.get("input")), language="text")
+            st.markdown("**Output**")
+            st.code(_clip_debug_text(event.get("output")), language="text")
 
 
 # ---------------------------------------------------------------------------

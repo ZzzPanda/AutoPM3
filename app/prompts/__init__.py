@@ -96,6 +96,16 @@ def render_pm3_evidence_workflow(
     )
 
 
+def render_pm3_paper_intake(
+    *,
+    evidence_chunks: list[dict],
+) -> str:
+    """Render the no-variant PM3 paper intake prompt."""
+    return _JINJA_ENV.get_template("pm3_paper_intake.j2").render(
+        evidence_chunks=evidence_chunks,
+    )
+
+
 def render_chinese_translation(*, title: str, text: str) -> str:
     """Render the prompt for per-section Chinese translation."""
     return _JINJA_ENV.get_template("translate_to_chinese.j2").render(
@@ -110,5 +120,6 @@ __all__ = [
     "TABLE_NTEXT_QA",
     "render_table_extraction",
     "render_pm3_evidence_workflow",
+    "render_pm3_paper_intake",
     "render_chinese_translation",
 ]

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr *)",
+      "Bash(gh --version)",
+      "Bash(gh repo *)",
+      "Bash(xargs -I {} sh -c 'echo \"$\\(wc -l < \"{}\"\\) {}\"')",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(lsof -nP -iTCP:5177 -sTCP:LISTEN)",
+      "Bash(lsof -nP -iTCP:5173 -sTCP:LISTEN)"
+    ]
+  }
+}

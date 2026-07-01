@@ -30,6 +30,7 @@ import requests
 from func_timeout import func_set_timeout
 
 from app.prompts import TABLE2TEXT, TABLE_NTEXT_QA, render_table_extraction
+from app.core.model_trace import trace_ainvoke
 import func_timeout
 
 
@@ -183,7 +184,12 @@ async def table_extraction_with_deepseek(current_paper_tables, query_variant_lis
         async with _am._llm_semaphore:
             try:
                 response = await asyncio.wait_for(
-                    llm.ainvoke(prompt),
+                    trace_ainvoke(
+                        label=f"table extraction {idx + 1}",
+                        model_name=model_name,
+                        input_payload=prompt,
+                        awaitable=llm.ainvoke(prompt),
+                    ),
                     timeout=LLM_TIMEOUT_SECONDS,
                 )
                 answer_text = response.content if hasattr(response, 'content') else str(response)

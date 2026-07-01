@@ -2,12 +2,16 @@
 .streamlit/secrets.toml
 config/.env
 config/.streamlit/secrets.toml
+server/.env
 
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+
+# JavaScript dependencies
+node_modules/
 
 # Runtime data — outputs of download_papers.py
 data/xml_papers/
